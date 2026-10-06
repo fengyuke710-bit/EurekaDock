@@ -18,6 +18,7 @@ internal sealed class DockWindow : Window {
  Native.WinEvent? callback;
  readonly DispatcherTimer attachRetry=new() {Interval=TimeSpan.FromSeconds(1)};
  bool closing;
+ bool initialLayout;
  int retryCount;
  bool hidden,menuOpen,attached;
  double anchorTop,baseLeft,baseWidth,baseHeight,sideWidth;
@@ -34,7 +35,8 @@ internal sealed class DockWindow : Window {
  internal void ToggleQuickBar() {quickBar??=new QuickBarWindow(this);quickBar.Toggle();}
  internal bool DesktopAttached=>attached;
  internal bool MenuOpen {get=>menuOpen;set {menuOpen=value; if(!value) {RefreshVisibility();Surface.RefreshHover();Accessories.RefreshHover();}}}
- public DockWindow() {
+ public DockWindow(bool prepareReveal=false) {
+  if(prepareReveal)BeginReveal();
   Title="EurekaDock"; WindowStyle=WindowStyle.None; AllowsTransparency=true; Background=Brushes.Transparent;
   ShowInTaskbar=false; ShowActivated=false; ResizeMode=ResizeMode.NoResize; Topmost=false;
   var layout=new Grid();layout.ColumnDefinitions.Add(accessoryColumn);layout.ColumnDefinitions.Add(new ColumnDefinition());
@@ -64,7 +66,7 @@ internal sealed class DockWindow : Window {
   if(msg==0x8001) {handled=true;Dispatcher.BeginInvoke(()=>Application.Current.Shutdown());}
   if(msg==0x8002) {handled=true;Dispatcher.BeginInvoke(()=>((App)Application.Current).OpenSettings());}
   if(msg==0x21) {handled=true; return new IntPtr(3);}
-  if(msg==0x20e) { Surface.Scroll((short)((w.ToInt64()>>16)&0xffff)/120.0,false); handled=true; }
+  if(msg==0x20e) { if(!Revealing)Surface.Scroll((short)((w.ToInt64()>>16)&0xffff)/120.0,false); handled=true; }
   if(msg==0x2e0) Dispatcher.BeginInvoke(Reload);
   return IntPtr.Zero;
  }
@@ -77,7 +79,7 @@ internal sealed class DockWindow : Window {
   if(!attached) Native.PlaceAtBottom(hwnd);
  }
  void RefreshVisibility() {
-  if(closing||Revealing||menuOpen||hwnd==IntPtr.Zero) return;
+  if(closing||(Revealing&&initialLayout)||menuOpen||hwnd==IntPtr.Zero) return;
   if(!attached&&Native.IsDesktopForeground()) TryAttach();
   var c=App.Store.Config;
   bool show=!hidden&&(c.DockEnabled||c.MusicEnabled)&&(attached||Native.IsDesktopForeground()||Native.GetForegroundWindow()==hwnd);
@@ -91,6 +93,20 @@ internal sealed class DockWindow : Window {
   if(!IsVisible)Show();Native.PlaceAtBottom(hwnd);
   SyncMusic();
   if(!c.DockEnabled&&music?.IsVisible==true&&c.ShowAccessories){Left=music.Left+(c.MusicStyle=="bars"?music.Bars.HorizontalPadding:0)-sideWidth-10;Top=music.Top+music.Height-Height;}
+  initialLayout=true;
+ }
+ internal void BeginReveal(){
+  Revealing=true;Opacity=0;IsHitTestVisible=false;
+  Surface.SetRevealPaused(true);Accessories.SetBackgroundSuspended(true);
+  Accessories.SyncDesktopState();
+  music?.Sync(IsVisible);
+ }
+ internal void CompleteReveal(){
+  if(closing)return;
+  Revealing=false;Opacity=1;IsHitTestVisible=true;
+  Surface.SetRevealPaused(false);Accessories.SetBackgroundSuspended(false);
+  if(music!=null)music.Opacity=1;
+  RefreshVisibility();
  }
  internal void Reload() {
   if(closing)return;
@@ -127,7 +143,7 @@ internal sealed class DockSurface : FrameworkElement {
  readonly Stopwatch time=Stopwatch.StartNew();
  readonly DispatcherTimer hold=new();
  List<DockItem> items=new();
- bool rendering,pressed,dragged,backgroundSuspended,resourcesReleased;
+ bool rendering,pressed,dragged,backgroundSuspended,resourcesReleased,revealPaused;
  internal bool BackgroundAnimating=>rendering;
  internal int CachedIconCount=>iconCache.Count;
  double lastFrame,downX,startPosition,lastX,lastMove,dragVelocity;
@@ -168,7 +184,7 @@ internal sealed class DockSurface : FrameworkElement {
   InvalidateVisual();Wake();
  }
  void ConfigureMotion()=>Motion.Configure(C.InfiniteCarousel,items.Count,Math.Max(0,(ActualWidth-C.IconSize-4)/(2*Pitch)));
- internal void Scroll(double slots,bool vertical=true) {if(Owner.MenuOpen||pressed) return;Motion.Wheel(vertical&&C.ReverseWheel?-slots:slots);Wake();}
+ internal void Scroll(double slots,bool vertical=true) {if(revealPaused||Owner.MenuOpen||pressed) return;Motion.Wheel(vertical&&C.ReverseWheel?-slots:slots);Wake();}
  internal void RefreshHover() {hover=IsMouseOver?Mouse.GetPosition(this).X:null;Wake();}
  internal void SetBackgroundSuspended(bool value){
   backgroundSuspended=value;
@@ -176,7 +192,13 @@ internal sealed class DockSurface : FrameworkElement {
   else {if(resourcesReleased)Reload();RefreshHover();}
  }
  internal void ReleaseBackgroundResources(){scene.Children.Clear();icons.Clear();iconCache.Clear();fogFrames.Clear();hits.Clear();resourcesReleased=true;InvalidateVisual();}
- void Wake() {if(rendering||backgroundSuspended)return;lastFrame=time.Elapsed.TotalSeconds;rendering=true;CompositionTarget.Rendering+=Frame;}
+ internal void SetRevealPaused(bool value){
+  revealPaused=value;
+  if(value){CancelDrag();hover=null;hoverResponses.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
+  else RefreshHover();
+  InvalidateVisual();
+ }
+ void Wake() {if(rendering||backgroundSuspended||revealPaused)return;lastFrame=time.Elapsed.TotalSeconds;rendering=true;CompositionTarget.Rendering+=Frame;}
  void Frame(object? s,EventArgs e) {
   double now=time.Elapsed.TotalSeconds,dt=now-lastFrame;
   Motion.Step(dt,C.Spring,C.Damping);lastFrame=now;

@@ -38,3 +38,20 @@ Author: **EurekaOrette**
 - 音乐律动读取默认播放设备的输出音频；歌曲名称与封面来自 Windows 媒体会话，均不上传。
 
 此仓库不含个人应用列表、播放记录或任何密钥。请不要将 `%LOCALAPPDATA%\EurekaDock`、`preview-data` 或历史备份提交到仓库。
+
+## 版本管理
+
+源码由 Git 管理，`CHECKPOINT.md` 记录最近一次完成的功能和验证结果。
+`checkpoint-before-static-reveal` 标签保留固定画面弹出改动之前的版本。
+个人配置、日志、编译结果、便携运行时和开发工具缓存不提交。
+
+后续修改完成并测试后，可运行：
+
+```powershell
+git add src README.md CHECKPOINT.md
+git commit -m "Describe the change"
+git push origin main
+git push origin --tags
+```
+
+远程仓库使用 GitHub 私有仓库；登录由 GitHub CLI 与当前用户凭据存储管理。

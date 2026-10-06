@@ -31,6 +31,7 @@ internal sealed class MusicWindow:Window {
  readonly DockWindow dock;internal readonly MusicLine Line=new();internal readonly MusicBars Bars=new();readonly DispatcherTimer fullscreenTimer=new(){Interval=TimeSpan.FromMilliseconds(700)};MusicAudio? audio;MediaInfoReader? media;TrackInfo remembered=TrackInfo.Empty;bool suppressedTrackInfo,disposed;int otherAudioChecks;
  internal Func<bool> FullscreenCheck=FullscreenGuard.IsActive;
  internal bool FullscreenPaused {get;private set;}
+ internal bool WorkersRunning=>audio!=null||media!=null;
  public MusicWindow(DockWindow owner){dock=owner;Owner=owner;Content=Line;WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=null;ShowInTaskbar=false;ShowActivated=false;ResizeMode=ResizeMode.NoResize;IsHitTestVisible=false;Topmost=false;
   SourceInitialized+=(s,e)=>{var h=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(h,-20,new IntPtr(Native.GetWindowLongPtr(h,-20).ToInt64()|0x08000000L|0x80L|0x20L));};
   fullscreenTimer.Tick+=(s,e)=>{if(IsVisible&&App.Store.Config.MusicEnabled){bool pause=FullscreenCheck();if(pause!=FullscreenPaused)Sync(true);}};
@@ -44,6 +45,10 @@ internal sealed class MusicWindow:Window {
   if(bars)Width+=2*Bars.HorizontalPadding;
   double baseline=bars?Height-6:Height-c.MusicAmplitude*.35-6;
   Left=screen.X/dpi.DpiScaleX+(screenWidth-Width)/2;Top=Math.Clamp(dock.MusicAnchorTop-c.MusicOffset-baseline,screen.Y/dpi.DpiScaleY,screen.Y/dpi.DpiScaleY+screenHeight-Height);
+  if(dock.Revealing){
+   Opacity=0;Show();fullscreenTimer.Stop();FullscreenPaused=false;
+   audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;
+  }
   Show();fullscreenTimer.Start();FullscreenPaused=FullscreenCheck();
   if(FullscreenPaused){audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;}
   if(bars){Bars.SuppressTrackInfo(suppressedTrackInfo);if(!suppressedTrackInfo&&!Bars.Track.Available&&remembered.Available)Bars.SetTrack(remembered);Bars.Refresh();media??=new MediaInfoReader(track=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(media!=null&&!disposed&&IsVisible&&App.Store.Config.MusicStyle=="bars"){if(track.Playing){suppressedTrackInfo=false;otherAudioChecks=0;Bars.SuppressTrackInfo(false);}if(suppressedTrackInfo)return;if(track.Available)remembered=track;Bars.SetTrack(track.Available?track:remembered);}});});}else{media?.Dispose();media=null;Line.Refresh();}

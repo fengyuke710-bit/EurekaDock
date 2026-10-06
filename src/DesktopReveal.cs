@@ -1,102 +1,84 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Threading;
+using System.Windows.Media.Imaging;
 
 namespace EurekaDock;
 
-// Scale the HWND bounds as well as the drawing: overshoot is never clipped by
-// the old window rectangle, and all desktop pieces share one screen-space pivot.
+// One fixed, noninteractive desktop HWND presents a frozen composite. Only its
+// drawing transform changes; the real Dock/music geometry and workers stay idle.
 internal sealed class DesktopReveal:IDisposable {
- [DllImport("user32.dll",SetLastError=true)]
- [return:MarshalAs(UnmanagedType.Bool)]
- static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int width,int height,uint flags);
- sealed class Piece {
-  internal readonly Window Window;
-  internal readonly FrameworkElement Content;
-  readonly Canvas host=new();
-  readonly ScaleTransform transform=new();
-  readonly Transform oldTransform;
-  readonly double oldWidth,oldHeight,oldOpacity;
-  readonly bool oldHitTest;
-  readonly IntPtr hwnd;
-  readonly DpiScale dpi;
-  internal readonly Rect Bounds;
-  internal Piece(Window window){
-   Window=window;window.UpdateLayout();Bounds=new Rect(window.Left,window.Top,window.Width,window.Height);
-   hwnd=new WindowInteropHelper(window).Handle;dpi=VisualTreeHelper.GetDpi(window);
-   Content=(FrameworkElement)window.Content;
-   oldWidth=Content.Width;oldHeight=Content.Height;oldTransform=Content.RenderTransform;
-   oldOpacity=window.Opacity;oldHitTest=window.IsHitTestVisible;
-   window.Content=null;Content.Width=Bounds.Width;Content.Height=Bounds.Height;Content.RenderTransform=transform;
-   host.Children.Add(Content);window.Content=host;window.IsHitTestVisible=false;
-  }
-  internal void Apply(Point pivot,double scale,double opacity){
-   transform.ScaleX=transform.ScaleY=scale;
-   double left=pivot.X+(Bounds.Left-pivot.X)*scale,top=pivot.Y+(Bounds.Top-pivot.Y)*scale;
-   // Update all four native bounds together instead of issuing four nested
-   // synchronous WPF resize/render passes per frame.
-   SetWindowPos(hwnd,IntPtr.Zero,(int)Math.Round(left*dpi.DpiScaleX),(int)Math.Round(top*dpi.DpiScaleY),
-    Math.Max(1,(int)Math.Round(Bounds.Width*scale*dpi.DpiScaleX)),Math.Max(1,(int)Math.Round(Bounds.Height*scale*dpi.DpiScaleY)),0x0214);
-   Window.Opacity=opacity;
-  }
-  internal void Restore(){
-   // WPF's Width/Height property may still equal its original requested value
-   // after native resizing; explicitly restore the physical HWND bounds too.
-   SetWindowPos(hwnd,IntPtr.Zero,(int)Math.Round(Bounds.Left*dpi.DpiScaleX),(int)Math.Round(Bounds.Top*dpi.DpiScaleY),
-    (int)Math.Round(Bounds.Width*dpi.DpiScaleX),(int)Math.Round(Bounds.Height*dpi.DpiScaleY),0x0214);
-   Window.Left=Bounds.Left;Window.Top=Bounds.Top;Window.Width=Bounds.Width;Window.Height=Bounds.Height;
-   host.Children.Remove(Content);Window.Content=Content;
-   Content.Width=oldWidth;Content.Height=oldHeight;Content.RenderTransform=oldTransform;
-   Window.Opacity=oldOpacity==0?1:oldOpacity;Window.IsHitTestVisible=oldHitTest;
-  }
- }
  readonly DockWindow dock;
- readonly List<Piece> pieces=new();
  readonly Stopwatch clock=new();
- readonly DispatcherTimer timer=new(DispatcherPriority.Normal){Interval=TimeSpan.FromMilliseconds(1000.0/120)};
- Point pivot;
- double last,velocity;
- bool updating;
+ readonly ScaleTransform transform=new();
+ Window? overlay;
+ Image? image;
  internal double Scale {get;private set;}=.02;
  internal bool Animating {get;private set;}
- internal DesktopReveal(DockWindow window){dock=window;timer.Tick+=Frame;}
+ internal Rect Bounds=>overlay==null?Rect.Empty:new Rect(overlay.Left,overlay.Top,overlay.Width,overlay.Height);
+ internal DesktopReveal(DockWindow window){dock=window;}
+
+ static BitmapSource Capture(Window window){
+  var content=(FrameworkElement)window.Content;content.UpdateLayout();
+  var dpi=VisualTreeHelper.GetDpi(window);
+  var bitmap=new RenderTargetBitmap(Math.Max(1,(int)Math.Ceiling(content.ActualWidth*dpi.DpiScaleX)),
+   Math.Max(1,(int)Math.Ceiling(content.ActualHeight*dpi.DpiScaleY)),96*dpi.DpiScaleX,96*dpi.DpiScaleY,PixelFormats.Pbgra32);
+  bitmap.Render(content);bitmap.Freeze();return bitmap;
+ }
  internal void Start(){
-  if(Animating||!dock.IsVisible)return;dock.Revealing=true;
-  pieces.Add(new Piece(dock));
-  if(dock.Music?.IsVisible==true)pieces.Add(new Piece(dock.Music));
-  var bounds=pieces[0].Bounds;
-  pivot=new Point(bounds.Left+bounds.Width/2,bounds.Bottom-8);
-  Scale=.02;velocity=0;last=0;Animating=true;clock.Restart();Apply();
-  // Rendering also fires synchronously during HWND resize, so it is not a
-  // reliable display-clock event for this short bounds animation.
-  App.Store.Changed+=Cancel;timer.Start();
+  if(Animating||!dock.IsVisible)return;
+  dock.BeginReveal();dock.UpdateLayout();
+  var dockBounds=new Rect(dock.Left,dock.Top,dock.Width,dock.Height);
+  Rect union=dockBounds;
+  var music=dock.Music?.IsVisible==true?dock.Music:null;
+  if(music!=null)union.Union(new Rect(music.Left,music.Top,music.Width,music.Height));
+  var drawing=new DrawingGroup();
+  using(var dc=drawing.Open()){
+   dc.DrawImage(Capture(dock),new Rect(dock.Left-union.Left,dock.Top-union.Top,dock.Width,dock.Height));
+   if(music!=null)dc.DrawImage(Capture(music),new Rect(music.Left-union.Left,music.Top-union.Top,music.Width,music.Height));
+  }
+  drawing.Freeze();var snapshot=new DrawingImage(drawing);snapshot.Freeze();
+  double marginX=union.Width*.08+4,marginY=union.Height*.12+4;
+  var host=new Canvas();
+  image=new Image{Source=snapshot,Width=union.Width,Height=union.Height,Stretch=Stretch.Fill,RenderTransform=transform,IsHitTestVisible=false};
+  transform.CenterX=dockBounds.Left+dockBounds.Width/2-union.Left;
+  transform.CenterY=dockBounds.Bottom-8-union.Top;
+  Canvas.SetLeft(image,marginX);Canvas.SetTop(image,marginY);host.Children.Add(image);
+  overlay=new Window{Title="EurekaDock reveal",Owner=dock,WindowStyle=WindowStyle.None,AllowsTransparency=true,
+   Background=Brushes.Transparent,ShowInTaskbar=false,ShowActivated=false,ResizeMode=ResizeMode.NoResize,
+   IsHitTestVisible=false,Topmost=false,Left=union.Left-marginX,Top=union.Top-marginY,
+   Width=union.Width+marginX*2,Height=union.Height+marginY*2,Content=host};
+  overlay.SourceInitialized+=(s,e)=>{
+   var hwnd=new WindowInteropHelper(overlay).Handle;
+   Native.SetWindowLongPtr(hwnd,-20,new IntPtr(Native.GetWindowLongPtr(hwnd,-20).ToInt64()|0x08000000L|0x80L|0x20L));
+  };
+  Scale=.02;Animating=true;clock.Restart();Apply();overlay.Show();
+  CompositionTarget.Rendering+=Frame;
  }
  void Frame(object? s,EventArgs e){
-  // Resizing a layered HWND can synchronously raise Rendering again.
-  if(!Animating||updating)return;updating=true;
-  try{
-  double now=clock.Elapsed.TotalSeconds,dt=Math.Clamp(now-last,0,.05);last=now;
-  int count=Math.Max(1,(int)Math.Ceiling(dt/.004));double step=dt/count;
-  for(int i=0;i<count;i++){velocity+=(200*(1-Scale)-20*velocity)*step;Scale+=velocity*step;}
-  Apply();
-  if(Math.Abs(Scale-1)<.0005&&Math.Abs(velocity)<.01)Dispose();
-  }finally{updating=false;}
+  if(!Animating)return;double seconds=clock.Elapsed.TotalSeconds;
+  // Analytic spring keeps timing independent of refresh rate and frame skips.
+  Scale=.02+.98*(1-Math.Exp(-12*seconds)*(Math.Cos(10*seconds)+1.2*Math.Sin(10*seconds)));
+  Apply();if(seconds>=.75)Complete();
  }
  void Apply(){
-  double opacity=Math.Clamp((Scale-.02)/.45,0,1);
-  for(int i=0;i<pieces.Count&&Animating;i++)pieces[i].Apply(pivot,Scale,opacity);
+  transform.ScaleX=transform.ScaleY=Scale;
+  if(image!=null)image.Opacity=Math.Clamp((Scale-.02)/.45,0,1);
  }
- void Cancel()=>Dispose();
+ internal void Complete(){
+  if(!Animating)return;
+  Scale=1;Apply();Animating=false;CompositionTarget.Rendering-=Frame;
+  if(!dock.IsClosing)dock.CompleteReveal();
+  CloseOverlay();clock.Stop();
+ }
+ void CloseOverlay(){
+  if(overlay!=null){overlay.Close();overlay.Content=null;overlay=null;}
+  if(image!=null){image.Source=null;image=null;}
+ }
  public void Dispose(){
-  Animating=false;
-  timer.Stop();timer.Tick-=Frame;App.Store.Changed-=Cancel;
-  foreach(var piece in pieces)piece.Restore();pieces.Clear();
-  Animating=false;Scale=1;clock.Stop();dock.Revealing=false;
+  Animating=false;CompositionTarget.Rendering-=Frame;clock.Stop();CloseOverlay();
  }
 }

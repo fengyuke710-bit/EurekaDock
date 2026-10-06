@@ -66,12 +66,24 @@ internal static class FullscreenProbes {
   File.WriteAllText(Path.Combine(store.Root,"background-metrics.json"),JsonSerializer.Serialize(metrics,new JsonSerializerOptions{WriteIndented=true}));
   background=false;desktop.Refresh();
   Check(app.Dock!=null&&desktop.Revealing&&desktop.RevealScale<.1,"leaving fullscreen creates new windows starting at a tiny unified scale");
-  var frames=new List<double>();for(int i=0;i<40;i++){Pump(20);frames.Add(desktop.RevealScale);}
+  Rect dockRect=new(app.Dock!.Left,app.Dock.Top,app.Dock.Width,app.Dock.Height),overlayRect=desktop.RevealBounds;
+  var restoredMusic=app.Dock.Music!;Rect musicRect=new(restoredMusic.Left,restoredMusic.Top,restoredMusic.Width,restoredMusic.Height);
+  bool fixedBounds=true,idleUntilComplete=true;
+  var frames=new List<double>();for(int i=0;i<40;i++){
+   Pump(20);frames.Add(desktop.RevealScale);
+   if(desktop.Revealing){
+    fixedBounds&=desktop.RevealBounds==overlayRect&&new Rect(app.Dock.Left,app.Dock.Top,app.Dock.Width,app.Dock.Height)==dockRect&&new Rect(restoredMusic.Left,restoredMusic.Top,restoredMusic.Width,restoredMusic.Height)==musicRect;
+    idleUntilComplete&=!app.Dock.Surface.BackgroundAnimating&&!app.Dock.Accessories.Animating&&!restoredMusic.WorkersRunning&&!restoredMusic.Line.Animating&&!restoredMusic.Bars.Animating&&app.Dock.Opacity==0&&restoredMusic.Opacity==0&&!app.Dock.IsHitTestVisible;
+   }
+  }
+  Check(fixedBounds,"Dock, music and single snapshot HWND bounds stay fixed throughout reveal");
+  Check(idleUntilComplete,"carousel, hover, controls, audio capture, metadata and waveform stay paused until reveal completes");
   File.WriteAllText(Path.Combine(store.Root,"reveal-frames.json"),JsonSerializer.Serialize(frames));
   Check(frames.Max()>1.005&&frames.Max()<1.1,"unified reveal gently overshoots and rebounds; observed maximum="+frames.Max());
   Pump(550);Check(!desktop.Revealing&&app.Dock!.Opacity==1&&app.Dock.IsHitTestVisible,"reveal settles and releases frame rendering with input restored");
   Check(app.Dock!.IsVisible&&app.Dock.Surface.CachedIconCount>0&&Math.Abs(app.Dock.Surface.Motion.Position-savedPosition)<.001,"recreation restores icon cache and carousel position");
   Check(Application.Current.Windows.OfType<MusicWindow>().Any(w=>w.IsVisible&&w.Opacity==1&&!w.IsHitTestVisible),"music joins the unified reveal and restores noninteractive behavior");
+  Check(restoredMusic.WorkersRunning&&!Application.Current.Windows.OfType<Window>().Any(w=>w.Title=="EurekaDock reveal"),"completion removes snapshot and only then starts normal music workers");
   background=true;desktop.Refresh();Pump(50);background=false;desktop.Refresh();Pump(80);background=true;desktop.Refresh();Pump(650);
   Check(app.Dock==null&&!desktop.Revealing&&!Application.Current.Windows.OfType<MusicWindow>().Any(),"rapid fullscreen changes safely cancel an in-progress reveal");
   desktop.SetHidden(true);background=false;desktop.Refresh();Pump(150);

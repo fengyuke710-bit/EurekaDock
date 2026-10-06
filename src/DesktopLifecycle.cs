@@ -23,6 +23,7 @@ internal sealed class DesktopLifecycle:IDisposable {
  internal WeakReference? LastClosed {get;private set;}
  internal bool Revealing=>reveal?.Animating==true;
  internal double RevealScale=>reveal?.Scale??1;
+ internal Rect RevealBounds=>reveal?.Bounds??Rect.Empty;
 
  internal DesktopLifecycle(App owner){
   app=owner;
@@ -75,7 +76,7 @@ internal sealed class DesktopLifecycle:IDisposable {
   if(app.Dock!=null)return;
   reclaim.Stop();
   // Opacity zero prevents an unanimated first frame when recreating the HWNDs.
-  var dock=new DockWindow{Opacity=animate?0:1};app.Dock=dock;
+  var dock=new DockWindow(animate);app.Dock=dock;
   dock.Show();dock.UpdateLayout();
   if(carouselPosition.HasValue){
    var motion=dock.Surface.Motion;
@@ -98,7 +99,7 @@ internal sealed class DesktopLifecycle:IDisposable {
   if(ReferenceEquals(app.MainWindow,dock))app.MainWindow=null;
   dock.Close();
  }
- internal void Reload(){reveal?.Dispose();reveal=null;Refresh();app.Dock?.Reload();}
+ internal void Reload(){reveal?.Complete();reveal?.Dispose();reveal=null;Refresh();app.Dock?.Reload();}
  public void Dispose(){
   if(disposed)return;disposed=true;
   timer.Stop();reclaim.Stop();App.Store.Changed-=Reload;
