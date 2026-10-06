@@ -29,4 +29,5 @@ browser authentication could change focus; the complete rerun passed.
 A frozen image is temporary and discarded when the live content is enabled.
 Visual smoothness still depends on Windows composition and display refresh.
 The tray, detector and runtime remain alive while desktop HWNDs are closed.
-GitHub synchronization targets a private repository after CLI device authorization.
+GitHub synchronization is configured for the private fengyuke710-bit/EurekaDock repository. Local main and both checkpoint tags were pushed and remote visibility was verified.
+
