@@ -16,32 +16,44 @@ internal sealed class DesktopReveal:IDisposable {
  readonly ScaleTransform transform=new();
  Window? overlay;
  Image? image;
+ Rect dockBounds,union;
  internal double Scale {get;private set;}=.02;
  internal bool Animating {get;private set;}
  internal Rect Bounds=>overlay==null?Rect.Empty:new Rect(overlay.Left,overlay.Top,overlay.Width,overlay.Height);
+ internal double AlignmentError {
+  get {
+   if(overlay==null||image==null)return 0;
+   var actual=DesktopPlacement.ClientBounds(overlay);
+   return Math.Max(Math.Abs(actual.Left+Canvas.GetLeft(image)-union.Left),
+    Math.Abs(actual.Top+Canvas.GetTop(image)-union.Top));
+  }
+ }
  internal DesktopReveal(DockWindow window){dock=window;}
 
- static BitmapSource Capture(Window window){
+ static BitmapSource Capture(Window window,Rect bounds){
   var content=(FrameworkElement)window.Content;content.UpdateLayout();
   var dpi=VisualTreeHelper.GetDpi(window);
-  var bitmap=new RenderTargetBitmap(Math.Max(1,(int)Math.Ceiling(content.ActualWidth*dpi.DpiScaleX)),
-   Math.Max(1,(int)Math.Ceiling(content.ActualHeight*dpi.DpiScaleY)),96*dpi.DpiScaleX,96*dpi.DpiScaleY,PixelFormats.Pbgra32);
+  var bitmap=new RenderTargetBitmap(Math.Max(1,(int)Math.Round(bounds.Width*dpi.DpiScaleX)),
+   Math.Max(1,(int)Math.Round(bounds.Height*dpi.DpiScaleY)),96*dpi.DpiScaleX,96*dpi.DpiScaleY,PixelFormats.Pbgra32);
   bitmap.Render(content);bitmap.Freeze();return bitmap;
  }
  internal void Start(){
   if(Animating||!dock.IsVisible)return;
   dock.BeginReveal();dock.UpdateLayout();
-  var dockBounds=new Rect(dock.Left,dock.Top,dock.Width,dock.Height);
-  Rect union=dockBounds;
+  dockBounds=DesktopPlacement.ClientBounds(dock);
+  union=dockBounds;
   var music=dock.Music?.IsVisible==true?dock.Music:null;
-  if(music!=null)union.Union(new Rect(music.Left,music.Top,music.Width,music.Height));
+  Rect musicBounds=music==null?Rect.Empty:DesktopPlacement.ClientBounds(music);
+  if(music!=null)union.Union(musicBounds);
   var drawing=new DrawingGroup();
   using(var dc=drawing.Open()){
-   dc.DrawImage(Capture(dock),new Rect(dock.Left-union.Left,dock.Top-union.Top,dock.Width,dock.Height));
-   if(music!=null)dc.DrawImage(Capture(music),new Rect(music.Left-union.Left,music.Top-union.Top,music.Width,music.Height));
+   dc.DrawImage(Capture(dock,dockBounds),new Rect(dockBounds.Left-union.Left,dockBounds.Top-union.Top,dockBounds.Width,dockBounds.Height));
+   if(music!=null)dc.DrawImage(Capture(music,musicBounds),new Rect(musicBounds.Left-union.Left,musicBounds.Top-union.Top,musicBounds.Width,musicBounds.Height));
   }
   drawing.Freeze();var snapshot=new DrawingImage(drawing);snapshot.Freeze();
-  double marginX=union.Width*.08+4,marginY=union.Height*.12+4;
+  var dpi=VisualTreeHelper.GetDpi(dock);
+  double marginX=Math.Ceiling((union.Width*.08+4)*dpi.DpiScaleX)/dpi.DpiScaleX,
+   marginY=Math.Ceiling((union.Height*.12+4)*dpi.DpiScaleY)/dpi.DpiScaleY;
   var host=new Canvas();
   image=new Image{Source=snapshot,Width=union.Width,Height=union.Height,Stretch=Stretch.Fill,RenderTransform=transform,IsHitTestVisible=false};
   transform.CenterX=dockBounds.Left+dockBounds.Width/2-union.Left;
@@ -62,6 +74,9 @@ internal sealed class DesktopReveal:IDisposable {
   if(!Animating)return;double seconds=clock.Elapsed.TotalSeconds;
   // Analytic spring keeps timing independent of refresh rate and frame skips.
   Scale=.02+.98*(1-Math.Exp(-12*seconds)*(Math.Cos(10*seconds)+1.2*Math.Sin(10*seconds)));
+  // Smoothly remove the tiny residual spring error before handing off at 1:1.
+  double settle=Math.Clamp((seconds-.45)/.30,0,1);settle=settle*settle*(3-2*settle);
+  Scale=1+(Scale-1)*(1-settle);
   Apply();if(seconds>=.75)Complete();
  }
  void Apply(){

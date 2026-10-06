@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -32,6 +32,12 @@ internal sealed class MusicWindow:Window {
  internal Func<bool> FullscreenCheck=FullscreenGuard.IsActive;
  internal bool FullscreenPaused {get;private set;}
  internal bool WorkersRunning=>audio!=null||media!=null;
+ internal bool TrackInfoHidden=>suppressedTrackInfo;
+ internal void SuppressForOtherAudio(){suppressedTrackInfo=true;remembered=TrackInfo.Empty;Bars.SetTrack(TrackInfo.Empty);Bars.SuppressTrackInfo(true);}
+ internal void PrimeRevealTrack(TrackInfo value,bool hidden){
+  if(disposed||!dock.Revealing||App.Store.Config.MusicStyle!="bars")return;
+  suppressedTrackInfo=hidden;remembered=hidden?TrackInfo.Empty:value;Bars.SetStaticTrack(remembered,hidden);
+ }
  public MusicWindow(DockWindow owner){dock=owner;Owner=owner;Content=Line;WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=null;ShowInTaskbar=false;ShowActivated=false;ResizeMode=ResizeMode.NoResize;IsHitTestVisible=false;Topmost=false;
   SourceInitialized+=(s,e)=>{var h=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(h,-20,new IntPtr(Native.GetWindowLongPtr(h,-20).ToInt64()|0x08000000L|0x80L|0x20L));};
   fullscreenTimer.Tick+=(s,e)=>{if(IsVisible&&App.Store.Config.MusicEnabled){bool pause=FullscreenCheck();if(pause!=FullscreenPaused)Sync(true);}};
@@ -52,7 +58,7 @@ internal sealed class MusicWindow:Window {
   Show();fullscreenTimer.Start();FullscreenPaused=FullscreenCheck();
   if(FullscreenPaused){audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;}
   if(bars){Bars.SuppressTrackInfo(suppressedTrackInfo);if(!suppressedTrackInfo&&!Bars.Track.Available&&remembered.Available)Bars.SetTrack(remembered);Bars.Refresh();media??=new MediaInfoReader(track=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(media!=null&&!disposed&&IsVisible&&App.Store.Config.MusicStyle=="bars"){if(track.Playing){suppressedTrackInfo=false;otherAudioChecks=0;Bars.SuppressTrackInfo(false);}if(suppressedTrackInfo)return;if(track.Available)remembered=track;Bars.SetTrack(track.Available?track:remembered);}});});}else{media?.Dispose();media=null;Line.Refresh();}
-  audio??=new MusicAudio(bands=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio!=null&&!disposed&&IsVisible){if(App.Store.Config.MusicStyle=="bars")Bars.Feed(bands);else Line.Feed(bands);}});},active=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio==null||disposed||!IsVisible||App.Store.Config.MusicStyle!="bars")return;if(Bars.Track.Playing){otherAudioChecks=0;return;}otherAudioChecks=active?otherAudioChecks+1:0;if(otherAudioChecks<2||suppressedTrackInfo)return;suppressedTrackInfo=true;remembered=TrackInfo.Empty;Bars.SetTrack(TrackInfo.Empty);Bars.SuppressTrackInfo(true);});});
+  audio??=new MusicAudio(bands=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio!=null&&!disposed&&IsVisible){if(App.Store.Config.MusicStyle=="bars")Bars.Feed(bands);else Line.Feed(bands);}});},active=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio==null||disposed||!IsVisible||App.Store.Config.MusicStyle!="bars")return;if(Bars.Track.Playing){otherAudioChecks=0;return;}otherAudioChecks=active?otherAudioChecks+1:0;if(otherAudioChecks<2||suppressedTrackInfo)return;SuppressForOtherAudio();});});
  }
 }
 internal sealed class MusicLine:FrameworkElement {

@@ -2,32 +2,39 @@
 
 ## Completed
 
-- Fullscreen/maximized coverage still destroys the desktop windows immediately.
-- Reappearance uses one frozen composite in one fixed transparent desktop window.
-  Only its image scale and opacity animate; real HWND bounds and layout never
-  change during the reveal. A small spring overshoot settles over 0.75 seconds.
-- Carousel, hover, accessory animation/polling, audio capture, media metadata,
-  waveform and record rotation stay paused until the reveal finishes.
-- Completion switches to the configured live Dock and then starts music workers.
-  Cancellation closes the snapshot without starting them. Settings changes,
-  rapid coverage changes, tray hide and music-only mode retain correct behavior.
-- Local Git baseline and the checkpoint-before-static-reveal tag preserve the
-  previous implementation. Build/cache/runtime files and personal settings stay
-  outside source control. The project author remains EurekaOrette.
+- Reveal pause is idempotent. Restoring a fractional carousel position no longer
+  silently changes its target to a neighboring slot before the live handoff.
+- The frozen composite uses actual Win32 client bounds and whole-pixel margins.
+  Its bitmap sizes and placement match the live windows. The spring's remaining
+  scale error settles smoothly to exactly 1 before the handoff at 0.75 seconds.
+- A small frozen track/artwork DTO survives desktop-window destruction. Album
+  artwork and text participate in the unified popup immediately. Audio capture,
+  metadata polling, record rotation, hover and carousel workers start afterwards.
+- A previously suppressed album returns directly in the expanded waveform-only
+  layout. No album or title briefly appears and disappears during the popup.
+- Fullscreen/maximized coverage still destroys the rendered windows. The retained
+  DTO does not retain their object graph. Tray, settings IPC and coverage detection
+  remain available while desktop windows are closed.
+- Running version and initialized portable ZIP were updated. Personal settings,
+  applications and icons were preserved; the preceding runtime and ZIP are backed
+  up outside source control. Private GitHub synchronization remains configured.
 
 ## Validation
 
-Release build: zero warnings/errors. 32 lifecycle checks passed, including fixed
-bounds throughout reveal, idle workers until completion, snapshot cleanup,
-collectible closed windows, settings IPC, real maximized and borderless fullscreen
-windows, rapid cancellation, carousel position and music-only recovery.
-22 edge/render checks passed. A prior real-foreground assertion failed while
-browser authentication could change focus; the complete rerun passed.
+Release build: zero warnings/errors. 39 lifecycle checks and 22 edge/render checks
+passed. Verification includes real maximized and borderless foreground windows,
+exact fractional carousel restoration, physical-pixel snapshot alignment, album
+pixels present in the reveal, no stale album pixels in waveform-only mode, idle
+workers during popup, collectible closed windows and rapid cancellation.
+
+The installed and packaged DLLs match the tested build. The live application
+restarted successfully, attached to the desktop, loaded all 20 configured items,
+and preserved the user's config hash. The share ZIP contains the portable runtime
+and no personal configuration, logs or confusing root ICO file.
 
 ## Limits and next step
 
-A frozen image is temporary and discarded when the live content is enabled.
-Visual smoothness still depends on Windows composition and display refresh.
-The tray, detector and runtime remain alive while desktop HWNDs are closed.
-GitHub synchronization is configured for the private fengyuke710-bit/EurekaDock repository. Local main and both checkpoint tags were pushed and remote visibility was verified.
-
+The popup intentionally displays the last visible track state without polling in
+the background; live media metadata refreshes after the popup. Display refresh
+and Windows composition still determine perceptual smoothness. Await user visual
+feedback; no further functional changes are pending.

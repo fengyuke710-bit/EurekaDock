@@ -18,12 +18,16 @@ internal sealed class DesktopLifecycle:IDisposable {
  DesktopReveal? reveal;
  bool disposed,queued,hidden,started,hasCreated;
  double? carouselPosition;
+ // Keep only the small frozen artwork DTO, never a closed window or worker.
+ TrackInfo revealTrack=TrackInfo.Empty;
+ bool revealTrackHidden;
  internal Func<bool> Covered=FullscreenGuard.IsBackgroundCovered;
  internal bool Suspended {get;private set;}
  internal WeakReference? LastClosed {get;private set;}
  internal bool Revealing=>reveal?.Animating==true;
  internal double RevealScale=>reveal?.Scale??1;
  internal Rect RevealBounds=>reveal?.Bounds??Rect.Empty;
+ internal double RevealAlignmentError=>reveal?.AlignmentError??0;
 
  internal DesktopLifecycle(App owner){
   app=owner;
@@ -84,6 +88,7 @@ internal sealed class DesktopLifecycle:IDisposable {
    motion.Position=motion.Target=position;motion.Velocity=0;dock.Surface.InvalidateVisual();
   }
   if(animate){
+   dock.Music?.PrimeRevealTrack(revealTrack,revealTrackHidden);
    reveal=new DesktopReveal(dock);reveal.Start();
    App.Store.Log("Desktop lifecycle: windows recreated; unified reveal started");
   }
@@ -95,6 +100,8 @@ internal sealed class DesktopLifecycle:IDisposable {
   var dock=app.Dock;app.Dock=null!;
   if(dock==null)return;
   carouselPosition=dock.Surface.Motion.Position;
+  revealTrack=App.Store.Config.MusicStyle=="bars"?dock.Music?.Bars.Track??TrackInfo.Empty:TrackInfo.Empty;
+  revealTrackHidden=App.Store.Config.MusicStyle=="bars"&&dock.Music?.TrackInfoHidden==true;
   LastClosed=new WeakReference(dock);
   if(ReferenceEquals(app.MainWindow,dock))app.MainWindow=null;
   dock.Close();

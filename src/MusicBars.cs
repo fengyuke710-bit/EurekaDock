@@ -19,6 +19,10 @@ internal sealed class MusicBars:FrameworkElement{
  internal double BandLevel(int index)=>level[index];
  internal double BarHeight(int i)=>3*Scale+Math.Clamp(level[i]/2.05,0,1)*(CoverSize/2*(1+.5*(1-Math.Clamp(reveal,0,1)))-3*Scale);
  internal void SetTrack(TrackInfo value){track=value;if(value.Available)displayTrack=value;InvalidateVisual();if(track.Available)Wake();}
+ // Prime the frozen reveal without enrolling the record or waveform in rendering.
+ internal void SetStaticTrack(TrackInfo value,bool hidden){track=displayTrack=value;suppressTrackInfo=hidden;reveal=hidden?0:1;revealVelocity=0;InvalidateVisual();}
+ internal bool TrackInfoHidden=>suppressTrackInfo;
+ internal double TrackReveal=>reveal;
  internal void SuppressTrackInfo(bool value){if(suppressTrackInfo==value)return;suppressTrackInfo=value;if(value&&Math.Abs(revealVelocity)<.02&&reveal>.99)revealVelocity=3.6;Wake();}
  internal void Feed(float[] incoming){bool changed=false;for(int i=0;i<36;i++){double start=i*48.0/36,end=(i+1)*48.0/36,power=0;for(int k=(int)start;k<Math.Ceiling(end);k++){double weight=Math.Max(0,Math.Min(end,k+1)-Math.Max(start,k));power+=incoming[k]*incoming[k]*weight;}double magnitude=Math.Max(0,Math.Sqrt(power/(end-start))-.00035);double position=i/35.0,balance=Math.Clamp(position/.65,0,1),frequencyGain=1+.55*position*position*(3-2*position)+.12*balance*balance*(3-2*balance);double next=VolumeResponse(magnitude*frequencyGain,App.Store.Config.MusicSensitivity);changed|=Math.Abs(next-target[i])>.0001;target[i]=next;}if(changed)Wake();}
  internal static double VolumeResponse(double magnitude,double sensitivity){double x=Math.Clamp(magnitude*sensitivity*4,0,1);return 2.05*(.19*x+.81*x*x);}

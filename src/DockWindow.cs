@@ -193,6 +193,7 @@ internal sealed class DockSurface : FrameworkElement {
  }
  internal void ReleaseBackgroundResources(){scene.Children.Clear();icons.Clear();iconCache.Clear();fogFrames.Clear();hits.Clear();resourcesReleased=true;InvalidateVisual();}
  internal void SetRevealPaused(bool value){
+  if(revealPaused==value)return;
   revealPaused=value;
   if(value){CancelDrag();hover=null;hoverResponses.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
   else RefreshHover();
