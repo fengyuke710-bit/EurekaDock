@@ -63,7 +63,7 @@ internal sealed class DesktopLifecycle:IDisposable {
  internal void SetHidden(bool value){hidden=value;Refresh();}
  internal void Refresh(){
   if(disposed)return;
-  bool covered=Covered();
+  bool covered=App.Store.Config.SuspendWhenCovered&&Covered();
   bool shouldClose=covered||hidden||(!App.Store.Config.DockEnabled&&!App.Store.Config.MusicEnabled);
   if(shouldClose){
    if(app.Dock?.MenuOpen==true)return;

@@ -2,6 +2,11 @@
 
 ## Completed
 
+- General has a bilingual, immediately saved "Pause desktop widgets in fullscreen
+  or maximized apps" switch. Default is on, including existing configurations.
+  Turning it off bypasses both window destruction and the separate music pause.
+  Tray hide and explicit Dock/visualizer visibility controls remain independent.
+
 - Reveal pause is idempotent. Restoring a fractional carousel position no longer
   silently changes its target to a neighboring slot before the live handoff.
 - The frozen composite uses actual Win32 client bounds and whole-pixel margins.
@@ -21,7 +26,7 @@
 
 ## Validation
 
-Release build: zero warnings/errors. 39 lifecycle checks and 22 edge/render checks
+Release build: zero warnings/errors. 46 lifecycle checks and 8 default-configuration checks
 passed. Verification includes real maximized and borderless foreground windows,
 exact fractional carousel restoration, physical-pixel snapshot alignment, album
 pixels present in the reveal, no stale album pixels in waveform-only mode, idle

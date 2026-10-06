@@ -68,6 +68,9 @@ internal sealed partial class SettingsWindow : Window {
     start.IsChecked=StartupRegistration.IsRegistered;
     start.Click+=(s,e)=> {try {StartupRegistration.SetEnabled(start.IsChecked==true);Say(L.T("登录启动设置已更新，将使用当前应用列表和配置。"));}catch(Exception ex){start.IsChecked=StartupRegistration.IsRegistered;Say(L.T("更新失败：")+ex.Message);}};
     page.Children.Add(start);
+    var suspend=new CheckBox {Name="SuspendWhenCoveredToggle",Content=L.P("全屏或最大化时暂停桌面组件","Pause desktop widgets in fullscreen or maximized apps"),IsChecked=C.SuspendWhenCovered,Margin=new Thickness(0,4,0,8)};
+    suspend.Click+=(s,e)=>{C.SuspendWhenCovered=suspend.IsChecked==true;Save();};page.Children.Add(suspend);
+    page.Children.Add(new TextBlock {Text=L.P("启用后，Dock、快捷按钮和音乐律动会暂时收起并停止运行，返回桌面时一起弹出。关闭后保持运行，仍只显示在桌面层。","When enabled, the Dock, its controls, and the visualizer pause and disappear while a fullscreen or maximized app is active, then reappear together when you return to the desktop. When disabled, they keep running on the desktop layer."),TextWrapping=TextWrapping.Wrap,Foreground=Brushes.DimGray,Margin=new Thickness(0,0,0,14)});
     page.Children.Add(new TextBlock {Text=L.T("托盘保留打开设置、暂时隐藏、重启和退出入口。\n配置位置：")+App.Store.Root,TextWrapping=TextWrapping.Wrap});
     if(App.Store.Recovery!="")page.Children.Add(new TextBlock {Text=App.Store.Recovery,Foreground=Brushes.DarkOrange,Margin=new Thickness(0,12,0,0)});
     break;
@@ -112,7 +115,7 @@ internal sealed partial class SettingsWindow : Window {
     if(C.MusicStyle=="line")Slider(L.T("波形振幅"),C.MusicAmplitude,4,70,v=>C.MusicAmplitude=v);
     Slider(L.T("音乐灵敏度"),C.MusicSensitivity,.2,6,v=>C.MusicSensitivity=v,"0.0");
     page.Children.Add(new TextBlock{Text=L.T("跟随默认输出设备，切换耳机/音箱后会自动重新连接；单独路由到其他设备或受保护的声音可能无法驱动。"),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,16,0,0)});
-    if(C.MusicStyle=="bars")page.Children.Add(new TextBlock{Text=L.P("条形音浪包含 36 根独立柱条，随声音向上起伏，无声时回落为小方块。缩放比例会同步改变封面、文字和柱条高度，不拉宽柱条。第一行只显示歌名，第二行显示歌手；文字颜色跟随柱条。暂停歌曲后保留已获取的信息。使用全屏应用时音浪和黑胶旋转会暂停，退出全屏后恢复。","Bar Wave has 36 independent bars that rise with sound and rest as small blocks in silence. Scaling changes artwork, text, and bar height without stretching the bars. The first line shows the song title, the second the artist, and both follow the bar color. Known track details remain while music is paused. The visualizer and record rotation pause in fullscreen apps and resume afterward."),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,18,0,0)});
+    if(C.MusicStyle=="bars")page.Children.Add(new TextBlock{Text=L.P("条形音浪包含 36 根独立柱条，随声音向上起伏，无声时回落为小方块。缩放比例会同步改变封面、文字和柱条高度，不拉宽柱条。第一行只显示歌名，第二行显示歌手；文字颜色跟随柱条。暂停歌曲后保留已获取的信息。全屏或最大化时是否暂停，可在“常规”中设置。","Bar Wave has 36 independent bars that rise with sound and rest as small blocks in silence. Scaling changes artwork, text, and bar height without stretching the bars. The first line shows the song title, the second the artist, and both follow the bar color. Known track details remain while music is paused. Pause behavior for fullscreen or maximized apps is controlled in General."),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,18,0,0)});
     WaveColorSettings();break;
    case 6:
     Heading(L.T("维护"),L.T("仅处理 EurekaDock 自己的配置、缓存与状态。"));

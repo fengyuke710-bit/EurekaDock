@@ -10,6 +10,7 @@ internal static class DefaultSettingsProbes {
  internal static void Run(Store store){
   var checks=new List<string>();void Check(bool ok,string name){if(!ok)throw new Exception(name);checks.Add("PASS "+name);}
   store.Load();var c=store.Config;
+  Check(c.SuspendWhenCovered&&JsonSerializer.Deserialize<Configuration>("{}")!.SuspendWhenCovered,"new and existing configurations enable coverage suspension by default");
   Check(c.Items.Count==0&&c.QuickItems.Count==0,"fresh configuration contains no personal Dock or Quick Panel apps");
   Check(c.MusicColorMemory.Length==10&&Array.TrueForAll(c.MusicColorMemory,x=>x==null)&&c.BarColorMemory.Length==10&&Array.TrueForAll(c.BarColorMemory,x=>x==null),"fresh configuration contains no saved personal colors");
   Check(c.MusicColorMode=="original"&&c.BarColorMode=="solid"&&c.BarColor=="#FFFFFF","fresh visualizer colors exclude personal palette and bars default white");

@@ -40,7 +40,7 @@ internal sealed class MusicWindow:Window {
  }
  public MusicWindow(DockWindow owner){dock=owner;Owner=owner;Content=Line;WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=null;ShowInTaskbar=false;ShowActivated=false;ResizeMode=ResizeMode.NoResize;IsHitTestVisible=false;Topmost=false;
   SourceInitialized+=(s,e)=>{var h=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(h,-20,new IntPtr(Native.GetWindowLongPtr(h,-20).ToInt64()|0x08000000L|0x80L|0x20L));};
-  fullscreenTimer.Tick+=(s,e)=>{if(IsVisible&&App.Store.Config.MusicEnabled){bool pause=FullscreenCheck();if(pause!=FullscreenPaused)Sync(true);}};
+  fullscreenTimer.Tick+=(s,e)=>{if(IsVisible&&App.Store.Config.MusicEnabled){bool pause=App.Store.Config.SuspendWhenCovered&&FullscreenCheck();if(pause!=FullscreenPaused)Sync(true);}};
   Closed+=(s,e)=>{disposed=true;fullscreenTimer.Stop();audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Stop();Bars.Stop();};
  }
  internal void Sync(bool visible){if(disposed)return;var c=App.Store.Config;
@@ -55,7 +55,7 @@ internal sealed class MusicWindow:Window {
    Opacity=0;Show();fullscreenTimer.Stop();FullscreenPaused=false;
    audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;
   }
-  Show();fullscreenTimer.Start();FullscreenPaused=FullscreenCheck();
+  Show();fullscreenTimer.Start();FullscreenPaused=c.SuspendWhenCovered&&FullscreenCheck();
   if(FullscreenPaused){audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;}
   if(bars){Bars.SuppressTrackInfo(suppressedTrackInfo);if(!suppressedTrackInfo&&!Bars.Track.Available&&remembered.Available)Bars.SetTrack(remembered);Bars.Refresh();media??=new MediaInfoReader(track=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(media!=null&&!disposed&&IsVisible&&App.Store.Config.MusicStyle=="bars"){if(track.Playing){suppressedTrackInfo=false;otherAudioChecks=0;Bars.SuppressTrackInfo(false);}if(suppressedTrackInfo)return;if(track.Available)remembered=track;Bars.SetTrack(track.Available?track:remembered);}});});}else{media?.Dispose();media=null;Line.Refresh();}
   audio??=new MusicAudio(bands=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio!=null&&!disposed&&IsVisible){if(App.Store.Config.MusicStyle=="bars")Bars.Feed(bands);else Line.Feed(bands);}});},active=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio==null||disposed||!IsVisible||App.Store.Config.MusicStyle!="bars")return;if(Bars.Track.Playing){otherAudioChecks=0;return;}otherAudioChecks=active?otherAudioChecks+1:0;if(otherAudioChecks<2||suppressedTrackInfo)return;SuppressForOtherAudio();});});

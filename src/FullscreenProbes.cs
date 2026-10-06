@@ -11,6 +11,7 @@ using System.Windows.Threading;
 namespace EurekaDock;
 
 internal static class FullscreenProbes {
+ static IEnumerable<DependencyObject> VisualChildren(DependencyObject item){yield return item;for(int i=0;i<System.Windows.Media.VisualTreeHelper.GetChildrenCount(item);i++)foreach(var child in VisualChildren(System.Windows.Media.VisualTreeHelper.GetChild(item,i)))yield return child;}
  [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
  static void PrimeArtwork(App app,System.Windows.Media.ImageSource artwork){app.Dock.Music!.Bars.SetTrack(new TrackInfo("Reveal artwork","Artist",artwork,true));}
  static int SnapshotArtworkPixels(string path){
@@ -56,6 +57,9 @@ internal static class FullscreenProbes {
   fullscreen=true;Pump(900);double angle=music.Bars.Angle;Pump(150);
   Check(music.FullscreenPaused&&!music.Bars.Animating&&Math.Abs(music.Bars.Angle-angle)<.001,"fullscreen stops bar animation and record rotation");
   Check(MusicAudio.Status=="已关闭"&&music.Bars.Track.Title=="Fullscreen test","fullscreen releases audio capture while retaining track details");
+  store.Config.SuspendWhenCovered=false;music.Sync(true);Pump(150);
+  Check(!music.FullscreenPaused&&music.WorkersRunning&&music.Bars.Animating,"disabling coverage suspension also bypasses the visualizer's fullscreen pause");
+  store.Config.SuspendWhenCovered=true;music.Sync(true);
   fullscreen=false;Pump(900);Check(!music.FullscreenPaused&&music.Bars.Animating&&music.Bars.Angle>angle,"leaving fullscreen restarts the bars and record");
   store.Config.MusicStyle="line";store.Save();Pump(150);
   fullscreen=true;Pump(900);Check(music.FullscreenPaused&&!music.Line.Animating,"fullscreen also suspends the linear wave");
@@ -123,6 +127,19 @@ internal static class FullscreenProbes {
   store.Config.MusicEnabled=true;store.Config.DockEnabled=false;store.Save();Pump(1350);
   Check(app.Dock?.Surface.Visibility==Visibility.Hidden&&app.Dock.Music?.IsVisible==true,"recreation respects music-only mode");
   store.Config.DockEnabled=true;store.Save();Pump(150);
+  background=true;desktop.Refresh();
+  var switchSettings=new SettingsWindow();switchSettings.Show();switchSettings.UpdateLayout();
+  System.Windows.Controls.CheckBox SuspendToggle()=>VisualChildren(switchSettings).OfType<System.Windows.Controls.CheckBox>().Single(c=>c.Name=="SuspendWhenCoveredToggle");
+  var toggle=SuspendToggle();Check(toggle.IsChecked==true&&toggle.Content.ToString()!.Contains("全屏"),"General exposes the enabled coverage suspension switch in Chinese");
+  toggle.IsChecked=false;toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));Pump(1100);
+  Check(!store.Config.SuspendWhenCovered&&app.Dock?.IsVisible==true&&!desktop.Suspended,"turning off the settings switch immediately restores widgets even while coverage remains active");
+  var reloaded=new Store(store.Root);reloaded.Load();Check(!reloaded.Config.SuspendWhenCovered&&reloaded.Config.Items.Count==store.Config.Items.Count,"switch state persists without changing the configured apps");
+  switchSettings.ChangeLanguage("en");switchSettings.UpdateLayout();
+  Check(SuspendToggle().Content.ToString()!.Contains("fullscreen")&&SuspendToggle().IsChecked==false,"English General uses the same persisted switch");
+  toggle=SuspendToggle();toggle.IsChecked=true;toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));Pump(80);
+  Check(store.Config.SuspendWhenCovered&&app.Dock==null&&desktop.Suspended&&MusicAudio.Status=="已关闭","turning the switch back on closes covered windows and stops music workers immediately");
+  switchSettings.Close();if(ReferenceEquals(app.MainWindow,switchSettings))app.MainWindow=null;
+  background=false;desktop.Refresh();Pump(1100);Check(app.Dock?.IsVisible==true&&!desktop.Revealing,"enabled suspension restores the unified popup after coverage ends");
   // Real foreground windows from a separate process exercise Win32 detection,
   // not only an injected predicate or geometry-only assertions.
   desktop.Covered=FullscreenGuard.IsBackgroundCovered;

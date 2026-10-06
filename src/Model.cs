@@ -21,6 +21,7 @@ public sealed class Configuration {
  public List<DockItem> QuickItems {get;set;}=new();
  public bool DockEnabled {get;set;}=true;
  public bool ShowAccessories {get;set;}=true;
+ public bool SuspendWhenCovered {get;set;}=true;
  public int Version {get;set;}=1;
  public double IconSize {get;set;}=40.1320754716981;
  public double Gap {get;set;}=25.188679245283;
