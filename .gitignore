@@ -1,0 +1,17 @@
+/.build/
+/bin/
+/src/bin/
+/src/obj/
+/preview-data/
+/evidence/
+/releases/
+/docs/
+/work/
+/preview.ps1
+*.exe
+*.dll
+*.pdb
+*.zip
+*.log
+*.user
+*.suo
