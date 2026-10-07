@@ -5,7 +5,11 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 namespace EurekaDock;
 internal static class WaveColors{
- internal static Color Parse(string hex)=>(Color)ColorConverter.ConvertFromString(hex);
+ internal static Color Parse(string hex){
+  if(hex.Length==7&&hex[0]=='#'&&uint.TryParse(hex.AsSpan(1),System.Globalization.NumberStyles.HexNumber,System.Globalization.CultureInfo.InvariantCulture,out uint rgb))
+   return Color.FromRgb((byte)(rgb>>16),(byte)(rgb>>8),(byte)rgb);
+  return (Color)ColorConverter.ConvertFromString(hex);
+ }
  internal static string Hex(Color c)=>$"#{c.R:X2}{c.G:X2}{c.B:X2}";
  internal static bool TryHex(string? value,out string hex){
   hex="";string text=value?.Trim()??"";if(text.StartsWith('#'))text=text[1..];

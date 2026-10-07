@@ -27,17 +27,27 @@ internal static class FullscreenProbes {
  }
  internal static void RunCoverageWindow(string phasePath){
   var window=new Window{Title="EurekaDock fullscreen verification",Width=720,Height=420,WindowStartupLocation=WindowStartupLocation.CenterScreen};
+  Window? utility=null;
   int stage=0;var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(1800)};
   window.Show();window.Activate();window.WindowState=WindowState.Maximized;
   Application.Current.Dispatcher.BeginInvoke(()=>File.WriteAllText(phasePath,"maximized"),DispatcherPriority.ApplicationIdle);
   timer.Tick+=(s,e)=>{
-   if(++stage==1){window.WindowState=WindowState.Normal;window.Width=720;window.Height=420;window.Activate();File.WriteAllText(phasePath,"normal");}
-   else if(stage==2){
+   if(++stage==1){utility=new Window{Title="EurekaDock small foreground verification",Width=500,Height=320,WindowStartupLocation=WindowStartupLocation.CenterScreen};utility.Show();utility.Activate();File.WriteAllText(phasePath,"maximized-overlay");}
+   else if(stage==2){utility?.Close();utility=null;window.WindowState=WindowState.Normal;window.Width=720;window.Height=420;window.Activate();File.WriteAllText(phasePath,"normal");}
+   else if(stage==3){
+    window.WindowStyle=WindowStyle.None;window.ResizeMode=ResizeMode.NoResize;
+    var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(window);var work=System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+    window.Left=work.Left/dpi.DpiScaleX;window.Top=work.Top/dpi.DpiScaleY;window.Width=work.Width/dpi.DpiScaleX;window.Height=work.Height/dpi.DpiScaleY;
+    window.Activate();File.WriteAllText(phasePath,"work-area");
+   }
+   else if(stage==4){
     window.WindowStyle=WindowStyle.None;window.ResizeMode=ResizeMode.NoResize;
     var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(window);var screen=System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
     window.Left=screen.Left/dpi.DpiScaleX;window.Top=screen.Top/dpi.DpiScaleY;window.Width=screen.Width/dpi.DpiScaleX;window.Height=screen.Height/dpi.DpiScaleY;
     window.Activate();File.WriteAllText(phasePath,"fullscreen");
-   }else{timer.Stop();window.Close();File.WriteAllText(phasePath,"finished");Application.Current.Shutdown();}
+   }else if(stage==5){utility=new Window{Title="EurekaDock small foreground verification",Width=500,Height=320,WindowStartupLocation=WindowStartupLocation.CenterScreen};utility.Show();utility.Activate();File.WriteAllText(phasePath,"fullscreen-overlay");}
+   else if(stage==6){utility?.Close();utility=null;window.WindowState=WindowState.Minimized;File.WriteAllText(phasePath,"minimized");}
+   else{timer.Stop();utility?.Close();window.Close();File.WriteAllText(phasePath,"finished");Application.Current.Shutdown();}
   };timer.Start();
  }
  static void Pump(int milliseconds){var frame=new DispatcherFrame();var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(milliseconds)};timer.Tick+=(s,e)=>{timer.Stop();frame.Continue=false;};timer.Start();Dispatcher.PushFrame(frame);}
@@ -66,7 +76,10 @@ internal static class FullscreenProbes {
   fullscreen=false;Pump(900);Check(!music.FullscreenPaused&&music.IsVisible,"linear wave resumes after fullscreen");
   app.Dock.Close();app.Dock=null!;app.MainWindow=null;
   store.Config.MusicStyle="bars";store.Config.InfiniteCarousel=false;store.Save();
-  bool background=false;using var desktop=new DesktopLifecycle(app){Covered=()=>background};desktop.Start();Pump(350);
+  bool background=true;using var desktop=new DesktopLifecycle(app){Covered=()=>background};desktop.Start();Pump(700);
+  Check(app.Dock==null&&desktop.Suspended&&desktop.ReclaimCount==1,"startup under a covered desktop creates no widgets and reclaims startup pages");
+  Pump(700);Check(desktop.ReclaimCount==1,"suspended polling does not repeatedly force GC or trim memory");
+  background=false;desktop.Refresh();Pump(1100);
   Check(app.Dock!=null&&app.Dock.Surface.CachedIconCount>0,"lifecycle creates configured desktop windows");
   app.Dock!.Surface.Motion.Position=app.Dock.Surface.Motion.Target=Math.Min(app.Dock.Surface.Motion.Maximum,app.Dock.Surface.Motion.Minimum+.37);
   double savedPosition=app.Dock.Surface.Motion.Position;
@@ -142,14 +155,18 @@ internal static class FullscreenProbes {
   background=false;desktop.Refresh();Pump(1100);Check(app.Dock?.IsVisible==true&&!desktop.Revealing,"enabled suspension restores the unified popup after coverage ends");
   // Real foreground windows from a separate process exercise Win32 detection,
   // not only an injected predicate or geometry-only assertions.
-  desktop.Covered=FullscreenGuard.IsBackgroundCovered;
   string phasePath=Path.Combine(store.Root,"coverage-phase.txt");
   using var helper=Process.Start(new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,ArgumentList={"--coverage-window-probe","--data="+Path.Combine(store.Root,"coverage-helper"),"--coverage-phase="+phasePath}})!;
+  desktop.Covered=()=>FullscreenGuard.IsProcessCovered((uint)helper.Id);
   void WaitPhase(string phase){var timeout=Stopwatch.StartNew();while(timeout.ElapsedMilliseconds<6000){Pump(40);if(File.Exists(phasePath)&&File.ReadAllText(phasePath)==phase){Pump(120);return;}}throw new Exception("Coverage window phase timed out: "+phase);}
   try{
    WaitPhase("maximized");desktop.Refresh();Check(app.Dock==null&&desktop.Suspended,"actual maximized foreground window closes the Dock");
+   WaitPhase("maximized-overlay");desktop.Refresh();Check(app.Dock==null&&desktop.Suspended&&MusicAudio.Status=="已关闭","a small foreground utility over a maximized app keeps Dock and audio suspended");
    WaitPhase("normal");desktop.Refresh();Check(app.Dock!=null&&!desktop.Suspended,"actual unmaximized foreground window recreates the Dock");
+   WaitPhase("work-area");desktop.Refresh();Check(app.Dock==null&&desktop.Suspended,"a custom-titlebar app filling the work area suspends widgets without a maximize flag");
    WaitPhase("fullscreen");desktop.Refresh();Check(app.Dock==null&&desktop.Suspended,"actual borderless fullscreen foreground window closes the Dock");
+   WaitPhase("fullscreen-overlay");desktop.Refresh();Check(app.Dock==null&&desktop.Suspended&&MusicAudio.Status=="已关闭","a small foreground utility over a fullscreen app does not wake the Dock");
+   WaitPhase("minimized");desktop.Refresh();Check(app.Dock!=null&&!desktop.Suspended,"minimized fullscreen windows no longer count as desktop coverage");
    WaitPhase("finished");desktop.Covered=()=>false;desktop.Refresh();Pump(1350);
    Check(app.Dock?.IsVisible==true&&!desktop.Revealing,"display recovers after real foreground coverage ends");
   }finally{if(!helper.HasExited)helper.Kill();}

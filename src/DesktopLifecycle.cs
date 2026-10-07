@@ -16,7 +16,8 @@ internal sealed class DesktopLifecycle:IDisposable {
  IntPtr hook;
  Native.WinEvent? callback;
  DesktopReveal? reveal;
- bool disposed,queued,hidden,started,hasCreated;
+ bool disposed,queued,hidden,started,hasCreated,reclaimRequested;
+ internal int ReclaimCount {get;private set;}
  double? carouselPosition;
  // Keep only the small frozen artwork DTO, never a closed window or worker.
  TrackInfo revealTrack=TrackInfo.Empty;
@@ -37,6 +38,7 @@ internal sealed class DesktopLifecycle:IDisposable {
    GC.Collect(GC.MaxGeneration,GCCollectionMode.Forced,true,true);
    GC.WaitForPendingFinalizers();
    BackgroundMemory.ReleaseIdlePages();
+   ReclaimCount++;
    App.Store.Log("Desktop lifecycle: closed-window resources reclaimed");
   };
  }
@@ -70,15 +72,16 @@ internal sealed class DesktopLifecycle:IDisposable {
    Suspended=covered;
    if(app.Dock!=null){
     CloseDock();
-    System.Runtime.GCSettings.LargeObjectHeapCompactionMode=System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
-    reclaim.Stop();reclaim.Start();
     App.Store.Log("Desktop lifecycle: windows closed; reason="+(covered?"fullscreen/maximized":hidden?"tray hidden":"disabled"));
    }
+   // Also release startup pages when the app starts under an already-covered
+   // desktop. Request once per suspension, never on every detector tick.
+   if(!reclaimRequested){reclaimRequested=true;System.Runtime.GCSettings.LargeObjectHeapCompactionMode=System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;reclaim.Stop();reclaim.Start();}
    return;
   }
   bool animate=hasCreated||Suspended;Suspended=false;
   if(app.Dock!=null)return;
-  reclaim.Stop();
+  reclaim.Stop();reclaimRequested=false;
   // Opacity zero prevents an unanimated first frame when recreating the HWNDs.
   var dock=new DockWindow(animate);app.Dock=dock;
   dock.Show();dock.UpdateLayout();

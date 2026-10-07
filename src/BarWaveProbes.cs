@@ -52,6 +52,13 @@ internal static class BarWaveProbes{
   Check(bars.TrackTextColor==Colors.White,"bar title and artist default to white");
   var drawing=new DrawingGroup();using(var dc=drawing.Open()){dc.DrawRectangle(new LinearGradientBrush(Color.FromRgb(79,102,165),Color.FromRgb(183,126,116),45),null,new Rect(0,0,200,200));dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(100,246,213,146)),null,new Point(125,80),48,48);dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(100,20,25,45)),null,new Rect(0,135,200,65));}drawing.Freeze();var art=new DrawingImage(drawing);art.Freeze();
   bars.SetTrack(new TrackInfo("Evening Light","Eureka",art,true,"Preview album"));double angle=bars.Angle;Pump(250);Check(bars.Angle>angle,"record rotates slowly with track artwork");
+  config.BarColor="#E07070";bars.Refresh();Pump(100);bars.UpdateLayout();
+  var header=new RenderTargetBitmap((int)bars.ActualWidth,(int)bars.ActualHeight,96,96,PixelFormats.Pbgra32);header.Render(bars);
+  var headerPixels=new byte[header.PixelWidth*header.PixelHeight*4];header.CopyPixels(headerPixels,header.PixelWidth*4,0);int coloredText=0;
+  int headerLeft=(int)Math.Ceiling(bars.HorizontalPadding+bars.CoverSize*1.5+14*bars.Scale),headerTop=(int)Math.Max(0,bars.Baseline-bars.CoverSize),headerBottom=(int)(headerTop+bars.CoverSize*.4);
+  for(int y=headerTop;y<Math.Min(headerBottom,header.PixelHeight);y++)for(int x=headerLeft;x<header.PixelWidth;x++){int at=(y*header.PixelWidth+x)*4;if(headerPixels[at+3]>100&&headerPixels[at+2]>headerPixels[at+1]+25&&headerPixels[at+2]>headerPixels[at]+25)coloredText++;}
+  Check(coloredText>20,"cached title and artist glyphs render the updated palette color");
+  config.BarColor="#FFFFFF";bars.Refresh();
   config.BarColorMode="custom";config.BarGradient=new(){"#FF0000","#0000FF"};bars.Refresh();Pump(150);var textBefore=bars.TrackTextColor;Pump(600);Check(bars.TrackTextColor!=textBefore,"track text follows the moving bar gradient");config.BarColorMode="solid";config.BarColor="#FFFFFF";bars.Refresh();
   for(int i=0;i<48;i++)spectrum[i]=(float)(.03+.05*(1+Math.Sin(i*.67)));bars.Feed(spectrum);Pump(300);Shot(bars,Path.Combine(store.Root,"bar-wave-demo.png"));
   bars.Feed(new float[48]);Pump(650);Check(Enumerable.Range(0,36).All(i=>bars.BarHeight(i)==3),"silence returns every bar to baseline blocks");Shot(bars,Path.Combine(store.Root,"bar-wave-silent.png"));

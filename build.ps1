@@ -19,10 +19,10 @@ if (-not (Test-Path -LiteralPath $compilerSetup)) { throw 'vcvars64.bat not foun
 Push-Location $projectRoot
 try {
   $setup = 'call "' + $compilerSetup + '" >nul && '
-  $bridge = $setup + 'cl /nologo /std:c++20 /EHsc /W4 /LD native\Bridge.cpp /Fo:bin\Bridge.obj /Fe:bin\EurekaDock.Native.dll /link user32.lib shell32.lib ole32.lib gdi32.lib comctl32.lib dwmapi.lib uuid.lib /IMPLIB:bin\EurekaDock.Native.lib'
+  $bridge = $setup + 'cl /nologo /std:c++20 /EHsc /O2 /W4 /LD native\Bridge.cpp /Fo:bin\Bridge.obj /Fe:bin\EurekaDock.Native.dll /link user32.lib shell32.lib ole32.lib gdi32.lib comctl32.lib dwmapi.lib uuid.lib /IMPLIB:bin\EurekaDock.Native.lib'
   & cmd.exe /d /c $bridge
   if ($LASTEXITCODE -ne 0) { throw 'Native bridge build failed.' }
-  $media = $setup + 'cl /nologo /std:c++20 /EHsc /W4 /LD native\MediaBridge.cpp /Fo:bin\MediaBridge.obj /Fe:bin\EurekaDock.Media.dll /link windowsapp.lib /IMPLIB:bin\EurekaDock.Media.lib'
+  $media = $setup + 'cl /nologo /std:c++20 /EHsc /O2 /W4 /LD native\MediaBridge.cpp /Fo:bin\MediaBridge.obj /Fe:bin\EurekaDock.Media.dll /link windowsapp.lib /IMPLIB:bin\EurekaDock.Media.lib'
   & cmd.exe /d /c $media
   if ($LASTEXITCODE -ne 0) { throw 'Media bridge build failed.' }
   dotnet restore src/EurekaDock.csproj --configfile NuGet.Config -p:NuGetAudit=false

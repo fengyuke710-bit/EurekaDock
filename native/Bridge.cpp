@@ -333,7 +333,8 @@ API int MusicRead(void* handle,float* bands){
 
 static void Spectrum(const double* samples,unsigned cursor,unsigned rate,float* bands){
  constexpr unsigned N=2048;std::array<std::complex<double>,N> bins;
- for(unsigned i=0;i<N;i++)bins[i]=samples[(cursor+i)%N]*(.5-.5*std::cos(2*3.141592653589793*i/(N-1)));
+ static const auto hann=[](){std::array<double,N> values{};for(unsigned i=0;i<N;i++)values[i]=.5-.5*std::cos(2*3.141592653589793*i/(N-1));return values;}();
+ for(unsigned i=0;i<N;i++)bins[i]=samples[(cursor+i)%N]*hann[i];
  for(unsigned i=1,j=0;i<N;i++){unsigned bit=N>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j)std::swap(bins[i],bins[j]);}
  for(unsigned length=2;length<=N;length<<=1){auto wlen=std::polar(1.0,-2*3.141592653589793/length);for(unsigned i=0;i<N;i+=length){std::complex<double> w=1;for(unsigned j=0;j<length/2;j++){auto u=bins[i+j],v=bins[i+j+length/2]*w;bins[i+j]=u+v;bins[i+j+length/2]=u-v;w*=wlen;}}}
  // Crop the final quarter of the former logarithmic display range, then
