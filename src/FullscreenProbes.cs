@@ -25,6 +25,19 @@ internal static class FullscreenProbes {
   var png=new System.Windows.Media.Imaging.PngBitmapEncoder();png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));using var file=File.Create(path);png.Save(file);
   return matches;
  }
+ static string WaveFingerprint(){
+  var window=Application.Current.Windows.OfType<Window>().Single(w=>w.Title=="EurekaDock reveal");
+  var image=((System.Windows.Controls.Canvas)window.Content).Children.OfType<System.Windows.Controls.Image>().Single();
+  var visual=new System.Windows.Media.DrawingVisual();using(var dc=visual.RenderOpen())dc.DrawImage(image.Source,new Rect(0,0,image.Width,image.Height));
+  var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(image.Width),(int)Math.Ceiling(image.Height),96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(visual);
+  var crop=new System.Windows.Media.Imaging.CroppedBitmap(bitmap,new Int32Rect(bitmap.PixelWidth/2,0,bitmap.PixelWidth-bitmap.PixelWidth/2,bitmap.PixelHeight));
+  var pixels=new byte[crop.PixelWidth*crop.PixelHeight*4];crop.CopyPixels(pixels,crop.PixelWidth*4,0);return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pixels));
+ }
+ static System.Media.SoundPlayer RevealTone(string root){
+  string path=Path.Combine(root,"reveal-test-tone.wav");const int rate=48000,frames=48000;
+  using(var writer=new BinaryWriter(File.Create(path))){writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));writer.Write(36+frames*2);writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));writer.Write(16);writer.Write((short)1);writer.Write((short)1);writer.Write(rate);writer.Write(rate*2);writer.Write((short)2);writer.Write((short)16);writer.Write(System.Text.Encoding.ASCII.GetBytes("data"));writer.Write(frames*2);for(int i=0;i<frames;i++)writer.Write((short)(Math.Sin(i*2*Math.PI*1200/rate)*1400));}
+  var player=new System.Media.SoundPlayer(path);player.Load();return player;
+ }
  internal static void RunCoverageWindow(string phasePath){
   var window=new Window{Title="EurekaDock fullscreen verification",Width=720,Height=420,WindowStartupLocation=WindowStartupLocation.CenterScreen};
   Window? utility=null;
@@ -98,40 +111,51 @@ internal static class FullscreenProbes {
   process.Refresh();var cpuBefore=process.TotalProcessorTime;var measurement=Stopwatch.StartNew();Pump(1500);process.Refresh();
   var metrics=new {WorkingSetActiveMB=activeWorkingSet/1048576.0,WorkingSetSuspendedMB=process.WorkingSet64/1048576.0,PrivateActiveMB=activePrivate/1048576.0,PrivateSuspendedMB=process.PrivateMemorySize64/1048576.0,SuspendedCpuPercent=(process.TotalProcessorTime-cpuBefore).TotalSeconds/measurement.Elapsed.TotalSeconds/Environment.ProcessorCount*100};
   File.WriteAllText(Path.Combine(store.Root,"background-metrics.json"),JsonSerializer.Serialize(metrics,new JsonSerializerOptions{WriteIndented=true}));
+  using var tone=RevealTone(store.Root);
   background=false;desktop.Refresh();
   Check(app.Dock!=null&&desktop.Revealing&&desktop.RevealScale<.1,"leaving fullscreen creates new windows starting at a tiny unified scale");
   Rect dockRect=new(app.Dock!.Left,app.Dock.Top,app.Dock.Width,app.Dock.Height),overlayRect=desktop.RevealBounds;
   var restoredMusic=app.Dock.Music!;Rect musicRect=new(restoredMusic.Left,restoredMusic.Top,restoredMusic.Width,restoredMusic.Height);
-  Check(ReferenceEquals(restoredMusic.Bars.Track.Artwork,artwork)&&restoredMusic.Bars.TitleText=="Reveal artwork"&&restoredMusic.Bars.TrackReveal==1&&!restoredMusic.Bars.Animating&&!restoredMusic.WorkersRunning,
-   "album artwork and title are primed in the frozen reveal before any music worker starts");
+  Check(ReferenceEquals(restoredMusic.Bars.Track.Artwork,artwork)&&restoredMusic.Bars.TitleText=="Reveal artwork"&&restoredMusic.Bars.TrackReveal==1&&restoredMusic.CaptureRunning&&!restoredMusic.MetadataRunning,
+   "reveal starts audio immediately while artwork and metadata layout remain primed");
   Check(desktop.RevealAlignmentError<.001,"snapshot and live client origins align to the same physical pixels");
   Check(SnapshotArtworkPixels(Path.Combine(store.Root,"reveal-with-artwork.png"))>200,"frozen composite contains the actual album pixels before popup completion");
-  bool fixedBounds=true,idleUntilComplete=true;
+  string quietFrame=WaveFingerprint();tone.PlayLooping();
+  bool fixedBounds=true,idleUntilComplete=true,waveResponded=false,pixelsChanged=false;
   var frames=new List<double>();for(int i=0;i<40;i++){
    Pump(20);frames.Add(desktop.RevealScale);
    if(desktop.Revealing){
     fixedBounds&=desktop.RevealAlignmentError<.001&&desktop.RevealBounds==overlayRect&&new Rect(app.Dock.Left,app.Dock.Top,app.Dock.Width,app.Dock.Height)==dockRect&&new Rect(restoredMusic.Left,restoredMusic.Top,restoredMusic.Width,restoredMusic.Height)==musicRect;
-    idleUntilComplete&=!app.Dock.Surface.BackgroundAnimating&&!app.Dock.Accessories.Animating&&!restoredMusic.WorkersRunning&&!restoredMusic.Line.Animating&&!restoredMusic.Bars.Animating&&app.Dock.Opacity==0&&restoredMusic.Opacity==0&&!app.Dock.IsHitTestVisible;
+    idleUntilComplete&=!app.Dock.Surface.BackgroundAnimating&&!app.Dock.Accessories.Animating&&restoredMusic.CaptureRunning&&!restoredMusic.MetadataRunning&&app.Dock.Opacity==0&&restoredMusic.Opacity==0&&!app.Dock.IsHitTestVisible;
+    if(i>=8){waveResponded|=Enumerable.Range(0,36).Any(n=>restoredMusic.Bars.BandLevel(n)>.0001);pixelsChanged|=WaveFingerprint()!=quietFrame;}
    }
   }
   Check(fixedBounds,"Dock, music and single snapshot HWND bounds stay fixed throughout reveal");
-  Check(idleUntilComplete,"carousel, hover, controls, audio capture, metadata and waveform stay paused until reveal completes");
+  Check(idleUntilComplete,"carousel, hover, controls and metadata stay paused while audio runs during reveal");
+  Check(waveResponded,"real loopback audio moves bar levels before reveal completes");
+  Check(pixelsChanged,"live music brush changes the visible composite pixels during reveal");
+  tone.Stop();
   File.WriteAllText(Path.Combine(store.Root,"reveal-frames.json"),JsonSerializer.Serialize(frames));
   Check(frames.Max()>1.005&&frames.Max()<1.1,"unified reveal gently overshoots and rebounds; observed maximum="+frames.Max());
   Pump(550);Check(!desktop.Revealing&&app.Dock!.Opacity==1&&app.Dock.IsHitTestVisible,"reveal settles and releases frame rendering with input restored");
   Check(app.Dock!.IsVisible&&app.Dock.Surface.CachedIconCount>0&&Math.Abs(app.Dock.Surface.Motion.Position-savedPosition)<.001,"recreation restores icon cache and carousel position");
   Check(Application.Current.Windows.OfType<MusicWindow>().Any(w=>w.IsVisible&&w.Opacity==1&&!w.IsHitTestVisible),"music joins the unified reveal and restores noninteractive behavior");
-  Check(restoredMusic.WorkersRunning&&!Application.Current.Windows.OfType<Window>().Any(w=>w.Title=="EurekaDock reveal"),"completion removes snapshot and only then starts normal music workers");
+  Check(restoredMusic.CaptureRunning&&restoredMusic.MetadataRunning&&!Application.Current.Windows.OfType<Window>().Any(w=>w.Title=="EurekaDock reveal"),"completion removes overlay and starts metadata without interrupting audio");
   Check(Math.Abs(app.Dock.Surface.Motion.Target-savedPosition)<.001,"reveal handoff does not snap a restored fractional carousel position to another slot");
   restoredMusic.SuppressForOtherAudio();background=true;desktop.Refresh();background=false;desktop.Refresh();
   var hiddenMusic=app.Dock!.Music!;
-  Check(hiddenMusic.TrackInfoHidden&&hiddenMusic.Bars.TrackInfoHidden&&hiddenMusic.Bars.TrackReveal==0&&!hiddenMusic.Bars.Track.Available&&!hiddenMusic.WorkersRunning,
+  Check(hiddenMusic.TrackInfoHidden&&hiddenMusic.Bars.TrackInfoHidden&&hiddenMusic.Bars.TrackReveal==0&&!hiddenMusic.Bars.Track.Available&&hiddenMusic.CaptureRunning&&!hiddenMusic.MetadataRunning,
    "a previously hidden cover returns directly as the expanded waveform-only layout");
   Check(SnapshotArtworkPixels(Path.Combine(store.Root,"reveal-without-artwork.png"))==0,"waveform-only snapshot contains no stale album pixels");
-  Pump(150);Check(desktop.Revealing&&hiddenMusic.Bars.TrackReveal==0&&!hiddenMusic.Bars.Animating,
+  Pump(150);Check(desktop.Revealing&&hiddenMusic.Bars.TrackReveal==0,
    "waveform-only reveal never flashes or animates a discarded album cover");
   background=true;desktop.Refresh();Pump(50);background=false;desktop.Refresh();Pump(80);background=true;desktop.Refresh();Pump(650);
   Check(app.Dock==null&&!desktop.Revealing&&!Application.Current.Windows.OfType<MusicWindow>().Any(),"rapid fullscreen changes safely cancel an in-progress reveal");
+  Check(MusicAudio.Status=="已关闭","cancelling reveal releases its live audio worker");
+  store.Config.MusicStyle="line";store.Save();tone.PlayLooping();background=false;desktop.Refresh();Pump(350);
+  var liveLine=app.Dock!.Music!;
+  Check(desktop.Revealing&&liveLine.CaptureRunning&&!liveLine.MetadataRunning&&liveLine.Line.Energy>.0001,"linear wave also responds to real music before popup completion");
+  background=true;desktop.Refresh();tone.Stop();store.Config.MusicStyle="bars";store.Save();
   desktop.SetHidden(true);background=false;desktop.Refresh();Pump(150);
   Check(app.Dock==null,"tray hide remains respected after leaving fullscreen");
   desktop.SetHidden(false);Pump(1350);Check(app.Dock?.IsVisible==true,"tray restore recreates the desktop display");

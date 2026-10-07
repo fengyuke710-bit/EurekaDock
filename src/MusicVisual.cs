@@ -28,15 +28,23 @@ internal sealed class MusicAudio:IDisposable {
  public void Dispose(){if(Interlocked.Exchange(ref disposed,1)!=0)return;stop.Set();if(thread.Join(1500))stop.Dispose();}
 }
 internal sealed class MusicWindow:Window {
- readonly DockWindow dock;internal readonly MusicLine Line=new();internal readonly MusicBars Bars=new();readonly DispatcherTimer fullscreenTimer=new(){Interval=TimeSpan.FromMilliseconds(700)};MusicAudio? audio;MediaInfoReader? media;TrackInfo remembered=TrackInfo.Empty;bool suppressedTrackInfo,disposed;int otherAudioChecks;
+ readonly DockWindow dock;internal readonly MusicLine Line=new();internal readonly MusicBars Bars=new();readonly DispatcherTimer fullscreenTimer=new(){Interval=TimeSpan.FromMilliseconds(700)};MusicAudio? audio;MediaInfoReader? media;TrackInfo remembered=TrackInfo.Empty;bool suppressedTrackInfo,disposed,revealAudio;int otherAudioChecks;
  internal Func<bool> FullscreenCheck=FullscreenGuard.IsActive;
  internal bool FullscreenPaused {get;private set;}
  internal bool WorkersRunning=>audio!=null||media!=null;
+ internal bool CaptureRunning=>audio!=null;
+ internal bool MetadataRunning=>media!=null;
  internal bool TrackInfoHidden=>suppressedTrackInfo;
  internal void SuppressForOtherAudio(){suppressedTrackInfo=true;remembered=TrackInfo.Empty;Bars.SetTrack(TrackInfo.Empty);Bars.SuppressTrackInfo(true);}
  internal void PrimeRevealTrack(TrackInfo value,bool hidden){
   if(disposed||!dock.Revealing||App.Store.Config.MusicStyle!="bars")return;
   suppressedTrackInfo=hidden;remembered=hidden?TrackInfo.Empty:value;Bars.SetStaticTrack(remembered,hidden);
+ }
+ internal void BeginRevealAudio(){
+  if(disposed||!dock.Revealing||!IsVisible||!App.Store.Config.MusicEnabled)return;
+  revealAudio=true;
+  if(App.Store.Config.MusicStyle=="bars")Bars.Refresh();else Line.Refresh();
+  StartAudio();
  }
  public MusicWindow(DockWindow owner){dock=owner;Owner=owner;Content=Line;WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=null;ShowInTaskbar=false;ShowActivated=false;ResizeMode=ResizeMode.NoResize;IsHitTestVisible=false;Topmost=false;
   SourceInitialized+=(s,e)=>{var h=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(h,-20,new IntPtr(Native.GetWindowLongPtr(h,-20).ToInt64()|0x08000000L|0x80L|0x20L));};
@@ -44,7 +52,7 @@ internal sealed class MusicWindow:Window {
   Closed+=(s,e)=>{disposed=true;fullscreenTimer.Stop();audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Stop();Bars.Stop();};
  }
  internal void Sync(bool visible){if(disposed)return;var c=App.Store.Config;
-  if(!visible||!c.MusicEnabled){fullscreenTimer.Stop();FullscreenPaused=false;audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Stop();Bars.Stop();Hide();return;}
+  if(!visible||!c.MusicEnabled){revealAudio=false;fullscreenTimer.Stop();FullscreenPaused=false;audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Stop();Bars.Stop();Hide();return;}
   bool bars=c.MusicStyle=="bars";object view=bars?Bars:Line;if(Content!=view){Line.Stop();Bars.Stop();Content=view;}
   var dpi=VisualTreeHelper.GetDpi(dock);var screen=System.Windows.Forms.Screen.PrimaryScreen!.Bounds;double screenWidth=screen.Width/dpi.DpiScaleX,screenHeight=screen.Height/dpi.DpiScaleY;
   Width=Math.Clamp(screenWidth*c.WidthFraction*c.MusicLength+(bars?(Bars.CoverSize-Bars.BaseCoverSize)*1.5+14*(Bars.Scale-1):0),bars?Bars.CoverSize*1.5+100:32,screenWidth-8);Height=bars?Bars.CoverSize+12:c.MusicAmplitude*2.6+12;
@@ -53,12 +61,16 @@ internal sealed class MusicWindow:Window {
   Left=screen.X/dpi.DpiScaleX+(screenWidth-Width)/2;Top=Math.Clamp(dock.MusicAnchorTop-c.MusicOffset-baseline,screen.Y/dpi.DpiScaleY,screen.Y/dpi.DpiScaleY+screenHeight-Height);
   if(dock.Revealing){
    Opacity=0;Show();fullscreenTimer.Stop();FullscreenPaused=false;
-   audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;
+   if(!revealAudio){audio?.Dispose();audio=null;Line.Suspend();Bars.Suspend();}media?.Dispose();media=null;return;
   }
+  revealAudio=false;
   Show();fullscreenTimer.Start();FullscreenPaused=c.SuspendWhenCovered&&FullscreenCheck();
   if(FullscreenPaused){audio?.Dispose();audio=null;media?.Dispose();media=null;Line.Suspend();Bars.Suspend();return;}
   if(bars){Bars.SuppressTrackInfo(suppressedTrackInfo);if(!suppressedTrackInfo&&!Bars.Track.Available&&remembered.Available)Bars.SetTrack(remembered);Bars.Refresh();media??=new MediaInfoReader(track=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(media!=null&&!disposed&&IsVisible&&App.Store.Config.MusicStyle=="bars"){if(track.Playing){suppressedTrackInfo=false;otherAudioChecks=0;Bars.SuppressTrackInfo(false);}if(suppressedTrackInfo)return;if(track.Available)remembered=track;Bars.SetTrack(track.Available?track:remembered);}});});}else{media?.Dispose();media=null;Line.Refresh();}
-  audio??=new MusicAudio(bands=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio!=null&&!disposed&&IsVisible){if(App.Store.Config.MusicStyle=="bars")Bars.Feed(bands);else Line.Feed(bands);}});},active=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio==null||disposed||!IsVisible||App.Store.Config.MusicStyle!="bars")return;if(Bars.Track.Playing){otherAudioChecks=0;return;}otherAudioChecks=active?otherAudioChecks+1:0;if(otherAudioChecks<2||suppressedTrackInfo)return;SuppressForOtherAudio();});});
+  StartAudio();
+ }
+ void StartAudio(){
+  audio??=new MusicAudio(bands=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio!=null&&!disposed&&IsVisible){if(App.Store.Config.MusicStyle=="bars")Bars.Feed(bands);else Line.Feed(bands);}});},active=>{if(!disposed)Dispatcher.BeginInvoke(()=>{if(audio==null||disposed||dock.Revealing||!IsVisible||App.Store.Config.MusicStyle!="bars")return;if(Bars.Track.Playing){otherAudioChecks=0;return;}otherAudioChecks=active?otherAudioChecks+1:0;if(otherAudioChecks<2||suppressedTrackInfo)return;SuppressForOtherAudio();});});
  }
 }
 internal sealed class MusicLine:FrameworkElement {

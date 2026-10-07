@@ -8,14 +8,15 @@ using System.Windows.Media.Imaging;
 
 namespace EurekaDock;
 
-// One fixed, noninteractive desktop HWND presents a frozen composite. Only its
-// drawing transform changes; the real Dock/music geometry and workers stay idle.
+// One fixed, noninteractive desktop HWND scales a frozen Dock and a live music
+// visual together. Audio can animate without changing any HWND bounds or layout.
 internal sealed class DesktopReveal:IDisposable {
  readonly DockWindow dock;
  readonly Stopwatch clock=new();
  readonly ScaleTransform transform=new();
  Window? overlay;
  Image? image;
+ VisualBrush? musicBrush;
  Rect dockBounds,union;
  internal double Scale {get;private set;}=.02;
  internal bool Animating {get;private set;}
@@ -48,9 +49,13 @@ internal sealed class DesktopReveal:IDisposable {
   var drawing=new DrawingGroup();
   using(var dc=drawing.Open()){
    dc.DrawImage(Capture(dock,dockBounds),new Rect(dockBounds.Left-union.Left,dockBounds.Top-union.Top,dockBounds.Width,dockBounds.Height));
-   if(music!=null)dc.DrawImage(Capture(music,musicBounds),new Rect(musicBounds.Left-union.Left,musicBounds.Top-union.Top,musicBounds.Width,musicBounds.Height));
+   if(music!=null){
+    musicBrush=new VisualBrush((FrameworkElement)music.Content){AutoLayoutContent=false,Stretch=Stretch.Fill,
+     ViewboxUnits=BrushMappingMode.Absolute,Viewbox=new Rect(0,0,musicBounds.Width,musicBounds.Height)};
+    dc.DrawRectangle(musicBrush,null,new Rect(musicBounds.Left-union.Left,musicBounds.Top-union.Top,musicBounds.Width,musicBounds.Height));
+   }
   }
-  drawing.Freeze();var snapshot=new DrawingImage(drawing);snapshot.Freeze();
+  if(music==null)drawing.Freeze();var snapshot=new DrawingImage(drawing);if(music==null)snapshot.Freeze();
   var dpi=VisualTreeHelper.GetDpi(dock);
   double marginX=Math.Ceiling((union.Width*.08+4)*dpi.DpiScaleX)/dpi.DpiScaleX,
    marginY=Math.Ceiling((union.Height*.12+4)*dpi.DpiScaleY)/dpi.DpiScaleY;
@@ -69,6 +74,7 @@ internal sealed class DesktopReveal:IDisposable {
   };
   Scale=.02;Animating=true;clock.Restart();Apply();overlay.Show();
   CompositionTarget.Rendering+=Frame;
+  music?.BeginRevealAudio();
  }
  void Frame(object? s,EventArgs e){
   if(!Animating)return;double seconds=clock.Elapsed.TotalSeconds;
@@ -92,6 +98,7 @@ internal sealed class DesktopReveal:IDisposable {
  void CloseOverlay(){
   if(overlay!=null){overlay.Close();overlay.Content=null;overlay=null;}
   if(image!=null){image.Source=null;image=null;}
+  if(musicBrush!=null){musicBrush.Visual=null;musicBrush=null;}
  }
  public void Dispose(){
   Animating=false;CompositionTarget.Rendering-=Frame;clock.Stop();CloseOverlay();

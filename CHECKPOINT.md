@@ -1,5 +1,15 @@
 # EurekaDock checkpoint — 2026-10-07
 
+## Latest update: live music during unified reveal
+
+- The fixed popup combines a frozen Dock with a live VisualBrush of the selected music visual. A single transform scales both; HWND positions and layout remain fixed.
+- Loopback capture starts as soon as the reveal is visible. Bars and the linear wave respond during the popup; the audio worker continues through the final handoff.
+- Artwork visibility is primed before animation. Metadata updates and other-audio cover transitions wait until the reveal completes, preventing layout shifts or stale-cover flashes.
+- Returning to fullscreen or cancelling a reveal immediately closes capture and releases the live brush references. Suspended resource behavior from the preceding checkpoint is preserved.
+- Version backups now use Git, per user preference. The preceding working version is tagged before-live-reveal; no additional old runtime/configuration copies are created.
+
+Validation: Release build has zero warnings/errors. All 118 relevant checks passed: 56 lifecycle/reveal, 31 bar visualization and 31 music checks. New tests play a real loopback tone, confirm bar and linear-wave movement before popup completion, verify changing composite pixels, and check fixed bounds, immediate artwork, waveform-only layout, handoff and rapid cancellation. Running runtime and portable ZIP are updated; personal configuration is unchanged.
+
 ## Completed
 
 - Suspension detects maximized, fullscreen and work-area-sized apps behind small foreground windows. Utility windows no longer accidentally restart the Dock, audio capture and animation workers. Minimized, cloaked, passive and desktop/system windows are excluded.
