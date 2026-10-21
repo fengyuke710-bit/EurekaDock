@@ -17,6 +17,8 @@ internal sealed partial class SettingsWindow : Window {
 
 
  Configuration C=>App.Store.Config;
+ int SelectedPage=>nav.SelectedItem is ListBoxItem item&&item.Tag is int index?index:0;
+ static string[] PageNames()=>new[]{L.T("常规"),"Dock",L.T("应用管理"),L.T("快捷栏"),L.T("动画"),L.T("音乐律动"),L.T("维护"),L.T("关于"),L.P("软件图标","App Icons")};
  public SettingsWindow() {
   SettingsRendering.Stabilize(this);
   Title=L.T("EurekaDock 设置 · 技术预览");Width=940;Height=Math.Min(820,SystemParameters.WorkArea.Height);MinWidth=780;MinHeight=520;WindowStartupLocation=WindowStartupLocation.CenterScreen;
@@ -25,18 +27,18 @@ internal sealed partial class SettingsWindow : Window {
   var rail=new StackPanel {Width=195,Background=Brushes.White};
   rail.Children.Add(new TextBlock {Text="EurekaDock",FontSize=22,FontWeight=FontWeights.SemiBold,Margin=new Thickness(20,28,10,24)});
   nav.BorderThickness=new Thickness(0);nav.FontSize=15;nav.Margin=new Thickness(10);
-  foreach(var name in new[]{L.T("常规"),"Dock",L.T("应用管理"),L.T("快捷栏"),L.T("动画"),L.T("音乐律动"),L.T("维护"),L.T("关于")})nav.Items.Add(new ListBoxItem {Content=name,Padding=new Thickness(12)});
+  var names=PageNames();foreach(int index in new[]{0,1,8,2,3,4,5,6,7})nav.Items.Add(new ListBoxItem {Content=names[index],Tag=index,Padding=new Thickness(12)});
   nav.SelectionChanged+=(s,e)=>{Render();pageScroll.ScrollToTop();};
   SizeChanged+=(s,e)=>{if(apps!=null)apps.Height=Math.Max(180,ActualHeight-350);};
   page.AllowDrop=true;page.Background=Brushes.Transparent;
-  page.PreviewDragOver+=(s,e)=>{if((nav.SelectedIndex==2||nav.SelectedIndex==3)&&e.Data.GetDataPresent(DataFormats.FileDrop)){e.Effects=DragDropEffects.Copy;e.Handled=true;}};
-  page.PreviewDrop+=(s,e)=>{if(nav.SelectedIndex==2&&e.Data.GetData(DataFormats.FileDrop) is string[] paths){e.Handled=true;ImportPaths(paths);}};
-  page.PreviewDrop+=(s,e)=>{if(nav.SelectedIndex==3&&e.Data.GetData(DataFormats.FileDrop) is string[] paths){e.Handled=true;int count=ImportQuick(paths);Render();Say(L.F("已添加 {0} 项；重复或超出容量的项目已跳过。","Added {0} items. Duplicates or items beyond capacity were skipped.",count));}};
+  page.PreviewDragOver+=(s,e)=>{if((SelectedPage==2||SelectedPage==3)&&e.Data.GetDataPresent(DataFormats.FileDrop)){e.Effects=DragDropEffects.Copy;e.Handled=true;}};
+  page.PreviewDrop+=(s,e)=>{if(SelectedPage==2&&e.Data.GetData(DataFormats.FileDrop) is string[] paths){e.Handled=true;ImportPaths(paths);}};
+  page.PreviewDrop+=(s,e)=>{if(SelectedPage==3&&e.Data.GetData(DataFormats.FileDrop) is string[] paths){e.Handled=true;int count=ImportQuick(paths);Render();Say(L.F("已添加 {0} 项；重复或超出容量的项目已跳过。","Added {0} items. Duplicates or items beyond capacity were skipped.",count));}};
   rail.Children.Add(nav);DockPanel.SetDock(rail,Dock.Left);root.Children.Add(rail);
   pageScroll.Content=page;root.Children.Add(pageScroll);Content=root;nav.SelectedIndex=0;
  }
  void Say(string message)=>status.Text=message;
- internal void SelectPage(int index)=>nav.SelectedIndex=index;
+ internal void SelectPage(int index)=>nav.SelectedItem=nav.Items.Cast<ListBoxItem>().Single(item=>(int)item.Tag==index);
  internal void ChangeLanguage(string language) {
   if(C.Language==language)return;
   string previous=C.Language;C.Language=language;
@@ -45,8 +47,7 @@ internal sealed partial class SettingsWindow : Window {
  }
  void RefreshLanguage(){
   Title=L.T("EurekaDock 设置 · 技术预览");
-  string[] names={L.T("常规"),"Dock",L.T("应用管理"),L.T("快捷栏"),L.T("动画"),L.T("音乐律动"),L.T("维护"),L.T("关于")};
-  for(int i=0;i<names.Length;i++)((ListBoxItem)nav.Items[i]).Content=names[i];Render();pageScroll.ScrollToTop();
+  string[] names=PageNames();foreach(ListBoxItem item in nav.Items)item.Content=names[(int)item.Tag];Render();pageScroll.ScrollToTop();
  }
  void Save() {try {App.Store.Save();Say(L.T("已自动保存"));}catch(Exception ex){App.Store.Log("Save: "+ex);Say(L.T("保存失败：")+ex.Message);}}
  void Heading(string title,string description) {page.Children.Add(new TextBlock {Text=title,FontSize=28,FontWeight=FontWeights.SemiBold,Margin=new Thickness(0,0,0,10)});page.Children.Add(new TextBlock {Text=description,TextWrapping=TextWrapping.Wrap,Foreground=Brushes.DimGray,Margin=new Thickness(0,0,0,20)});}
@@ -58,7 +59,7 @@ internal sealed partial class SettingsWindow : Window {
  }
  void Render() {
   quickGrid?.Cancel();page.Children.Clear();status.Text="";
-  switch(nav.SelectedIndex) {
+  switch(SelectedPage) {
    case 0:
     Heading(L.T("常规"),L.T("离线运行；关闭设置窗口后，Dock 与系统托盘继续运行。"));
     page.Children.Add(new TextBlock{Text=L.P("界面语言 / Language","Language / 界面语言"),Margin=new Thickness(0,4,0,6)});
@@ -123,6 +124,17 @@ internal sealed partial class SettingsWindow : Window {
     page.Children.Add(Button(L.T("尝试修复配置"),()=>{App.Store.Load();((App)Application.Current).ReloadDock();Say(App.Store.Recovery==""?L.T("配置正常。"):App.Store.Recovery);}));
     page.Children.Add(Button(L.T("重新加载 Dock"),()=>{((App)Application.Current).ReloadDock();Say(L.T("已重新加载"));}));
     page.Children.Add(Button(L.T("重启 EurekaDock"),()=>((App)Application.Current).Restart()));
+    break;
+   case 8:
+    Heading(L.P("软件图标","App Icons"),L.P("分别选择点击反馈与常态显示效果，更改立即生效并自动保存。","Choose click feedback and a resting appearance independently. Changes apply immediately and save automatically."));
+    page.Children.Add(new TextBlock{Text=L.P("点击反馈","Click feedback"),Margin=new Thickness(0,8,0,6)});
+    var clickEffect=new ComboBox{Name="IconClickFeedbackSelector",ItemsSource=new[]{L.P("默认（现有效果）","Default (current behavior)"),L.P("弹跳（macOS 风格）","Bounce (macOS style)")},SelectedIndex=C.IconClickFeedback=="bounce"?1:0,Width=270,HorizontalAlignment=HorizontalAlignment.Left,Padding=new Thickness(6)};
+    clickEffect.SelectionChanged+=(s,e)=>{C.IconClickFeedback=clickEffect.SelectedIndex==1?"bounce":"default";Save();};page.Children.Add(clickEffect);
+    page.Children.Add(new TextBlock{Text=L.P("仅在单击启动项目时触发逐渐减弱的弹跳。横向拖动和右键菜单不会触发。","A confirmed click starts a short series of diminishing hops. Dragging and context menus do not trigger it."),TextWrapping=TextWrapping.Wrap,Foreground=Brushes.DimGray,Margin=new Thickness(0,8,0,20)});
+    page.Children.Add(new TextBlock{Text=L.P("常态显示","Resting appearance"),Margin=new Thickness(0,8,0,6)});
+    var displayEffect=new ComboBox{Name="IconDisplayEffectSelector",ItemsSource=new[]{L.P("默认（无反射）","Default (no reflection)"),L.P("镜面反射","Mirror reflection")},SelectedIndex=C.IconDisplayEffect=="reflection"?1:0,Width=270,HorizontalAlignment=HorizontalAlignment.Left,Padding=new Thickness(6)};
+    displayEffect.SelectionChanged+=(s,e)=>{C.IconDisplayEffect=displayEffect.SelectedIndex==1?"reflection":"default";Save();};page.Children.Add(displayEffect);
+    page.Children.Add(new TextBlock{Text=L.P("在图标下方显示向屏幕外倾斜的柔和倒影，越向下越模糊、越透明。两项设置适用于 Dock 与快捷栏；快捷栏启动项目后仍会自动收起。默认选项保留原有外观和操作。","Shows a soft reflection below each icon, widening towards the viewer and becoming blurrier and more transparent downwards. Both settings apply to the Dock and Quick Panel; launching a Quick Panel item still closes it automatically. Defaults preserve the existing look and behavior."),TextWrapping=TextWrapping.Wrap,Foreground=Brushes.DimGray,Margin=new Thickness(0,8,0,0)});
     break;
    default:
     AboutPage();

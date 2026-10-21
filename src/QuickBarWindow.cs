@@ -18,6 +18,8 @@ internal sealed class QuickBarWindow:Window {
  readonly PopSpring spring=new();
  readonly Stopwatch clock=Stopwatch.StartNew();
  readonly List<(HoverResponse response,ScaleTransform transform)> hovers=new();
+ readonly List<ApplicationIcon> artwork=new();
+ readonly Dictionary<int,double> feedback=new();
  System.Windows.Controls.Primitives.UniformGrid? iconGrid;
  Point? pointer;bool pressed;
  internal double IconScale(int index)=>hovers[index].transform.ScaleX;
@@ -53,8 +55,10 @@ internal sealed class QuickBarWindow:Window {
   var work=new Rect(screen.X/dpi.DpiScaleX,screen.Y/dpi.DpiScaleY,screen.Width/dpi.DpiScaleX,screen.Height/dpi.DpiScaleY);
   var point=dock.Accessories.PointToScreen(new Point(dock.Accessories.DotX,dock.Accessories.DotY(2)));
   var anchor=new Point(point.X/dpi.DpiScaleX,point.Y/dpi.DpiScaleY);
-  double side=Math.Max(11,c.IconSize*(c.HoverScale-1)/2-c.Gap/2+2),above=Math.Max(11,c.IconSize*(c.HoverScale-1)-c.Gap/2+2);
-  double width=Math.Min(c.QuickColumns*pitch+side*2+2,work.Width-32),height=Math.Min(c.QuickRows*pitch+above+13,work.Height-32);
+  double headroom=IconEffects.Headroom(c,dpi.DpiScaleY),reflectionSpace=IconEffects.ReflectionSpace(c,dpi.DpiScaleY);
+  double extent=c.IconSize*c.HoverScale*(c.IconDisplayEffect=="reflection"?1.22:1);
+  double side=Math.Max(11,(extent-pitch)/2+2),above=Math.Max(11,c.IconSize*(c.HoverScale-1)-c.Gap/2+2)+headroom,below=11+reflectionSpace;
+  double width=Math.Min(c.QuickColumns*pitch+side*2+2,work.Width-32),height=Math.Min(c.QuickRows*pitch+above+below+2,work.Height-32);
   double left=Math.Clamp(anchor.X-width-18,work.Left+8,work.Right-width-8),top=Math.Clamp(anchor.Y-height+8,work.Top+8,work.Bottom-height-8);
   // Include the anchor in the HWND, then grow the tray about that exact point.
   double margin=Math.Max(width,height)*.16+8;Left=Math.Min(left,anchor.X)-margin;Top=Math.Min(top,anchor.Y)-margin;
@@ -62,7 +66,7 @@ internal sealed class QuickBarWindow:Window {
   Canvas.SetLeft(tray,left-Left);Canvas.SetTop(tray,top-Top);tray.Width=width;tray.Height=height;
   anchorLocal=new Point(anchor.X-Left,anchor.Y-Top);destination=new Rect(left-Left,top-Top,width,height);
   morph.Width=Width;morph.Height=Height;scale.CenterX=scale.CenterY=0;
-  hovers.Clear();pointer=null;pressed=false;
+  hovers.Clear();artwork.Clear();feedback.Clear();pointer=null;pressed=false;
   var grid=new System.Windows.Controls.Primitives.UniformGrid{Columns=c.QuickColumns,Rows=c.QuickRows,Width=c.QuickColumns*pitch,Height=c.QuickRows*pitch};
   iconGrid=grid;
   var presenter=new FrameworkElementFactory(typeof(ContentPresenter));presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);presenter.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);
@@ -74,11 +78,13 @@ internal sealed class QuickBarWindow:Window {
    if(i>=visible.Count)continue;
    var item=visible[i];var icon=Native.Icon(item,(int)Math.Ceiling(c.IconSize*c.HoverScale*dpi.DpiScaleX));
    var zoom=new ScaleTransform(1,1);hovers.Add((new HoverResponse(),zoom));
-   var button=new Button{Template=iconTemplate,FocusVisualStyle=null,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Padding=new Thickness(0),ToolTip=item.ToString(),Content=new Image{Source=icon,Width=c.IconSize,Height=c.IconSize,RenderTransform=zoom,RenderTransformOrigin=new Point(.5,1),Opacity=item.Available?1:.4}};
-   button.Click+=(s,e)=>{Dismiss();dock.Launch(item);};slot.Children.Add(button);
+   var view=new ApplicationIcon(icon,c.IconSize,c.IconDisplayEffect=="reflection"){RenderTransform=zoom,RenderTransformOrigin=new Point(.5,1),Opacity=item.Available?1:.4};artwork.Add(view);int index=artwork.Count-1;
+   var button=new Button{Template=iconTemplate,FocusVisualStyle=null,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Padding=new Thickness(0),ToolTip=item.ToString(),Content=view};
+   button.Click+=(s,e)=>{if(c.IconClickFeedback=="bounce")feedback[index]=clock.Elapsed.TotalSeconds;Dismiss();dock.Launch(item);};slot.Children.Add(button);
   }
   var contents=new Grid();contents.Children.Add(grid);if(c.QuickItems.Count==0)contents.Children.Add(new TextBlock{Text=L.T("在设置 → 快捷栏中添加应用"),TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(10),Foreground=Brushes.DarkSlateGray});
-  var viewport=new ScrollViewer{Content=contents,Margin=new Thickness(side,above,side,11),HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+  var paddedContents=new Border{Padding=new Thickness(side,above,side,below),Child=contents};
+  var viewport=new ScrollViewer{Content=paddedContents,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
   viewport.ScrollChanged+=(s,e)=>{if(tray.IsMouseOver&&iconGrid!=null)HoverAt(Mouse.GetPosition(iconGrid));};tray.Child=viewport;
   ApplyReveal();opened=true;Show();dock.Accessories.InvalidateVisual();StartHook();if(!opened)return;spring.SetTarget(1);Wake();
  }
@@ -112,6 +118,7 @@ internal sealed class QuickBarWindow:Window {
    double target=0;
    if(opened&&pointer.HasValue&&!pressed){double dx=((i%c.QuickColumns+.5)*pitch-pointer.Value.X)/(pitch*1.1),dy=((i/c.QuickColumns+.5)*pitch-pointer.Value.Y)/(pitch*1.1);target=(c.HoverScale-1)*Math.Exp(-(dx*dx+dy*dy)*1.6);}
    var entry=hovers[i];entry.response.Step(target,dt);entry.transform.ScaleX=entry.transform.ScaleY=1+entry.response.Value;moving|=entry.response.Moving;
+   if(feedback.TryGetValue(i,out double began)){double elapsed=now-began;artwork[i].Animate(IconEffects.Bounce(elapsed));if(elapsed>=IconEffects.BounceDuration)feedback.Remove(i);else moving=true;}
   }
   if(!spring.Moving&&!moving){CompositionTarget.Rendering-=Frame;rendering=false;if(!opened){Hide();dock.Accessories.InvalidateVisual();}}
  }

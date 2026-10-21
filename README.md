@@ -14,6 +14,22 @@ Author: **EurekaOrette**
 
 EurekaDock is open source under the [MIT License](LICENSE). Use, modification, and redistribution, including commercial use, are permitted with the copyright and license notices retained. Third-party components and the .NET runtime remain subject to their respective licenses.
 
+## 软件图标效果 / App icon effects
+
+设置 → **软件图标**提供两项独立选项，均默认保留原有效果，并实时自动保存：
+
+- **点击反馈 → 弹跳（macOS 风格）**：单击启动后向上弹跳，幅度逐次减弱。横向拖动、长按拖动和右键不会触发。
+- **常态显示 → 镜面反射**：在图标下方显示向屏幕外倾斜的倒影，向下逐渐模糊、渐隐；不添加背景托盘。
+
+效果适用于 Dock 与快捷栏，继续使用现有图标大小、悬停放大和边缘渐隐设置。快捷栏启动项目后仍自动收起。选择“默认”即可分别关闭效果。反射图像预先生成并缓存；静止时停止动画计算。
+
+In **Settings → App Icons**, choose click feedback and resting appearance independently. Both defaults preserve the existing behavior, and changes save automatically:
+
+- **Click feedback → Bounce (macOS style)** adds diminishing upward hops after a launch click. Dragging and right-clicks do not trigger it.
+- **Resting appearance → Mirror reflection** adds a reflection below the icon, widening towards the viewer and progressively blurring and fading downwards, without a background tray.
+
+Effects apply to the Dock and Quick Panel while retaining icon size, hover zoom, and edge fading. The Quick Panel still closes after launching an item. Choose Default to disable either effect. Reflections are cached; animation processing stops when idle.
+
 ## 构建
 
 需要 Windows 11 x64、.NET 10 SDK、Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”组件和 Windows SDK。在 PowerShell 中运行：

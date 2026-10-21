@@ -19,7 +19,7 @@ internal static class QuickProbes {
  [StructLayout(LayoutKind.Sequential)]struct CursorPoint{public int X,Y;}
  internal static void Run(Store store){
   var results=new List<string>();void Check(bool ok,string name){if(!ok)throw new Exception(name);results.Add("PASS "+name);}
-  store.Load();var c=store.Config;Check(c.QuickColumns==3&&c.QuickRows==2&&c.QuickItems.Count==0,"existing config receives empty independent quickbar");
+  store.Load();var c=store.Config;Check(c.QuickColumns==3&&c.QuickRows==3&&c.QuickItems.Count==0,"new configurations use the current empty 3 by 3 Quick Panel default");
   string exe=Environment.ProcessPath!;for(int i=0;i<6;i++)c.QuickItems.Add(new DockItem{Name="快捷应用 "+i,Target=exe});
   c.QuickColumns=5;c.QuickRows=10;c.Validate();Check(true,"maximum capacity 5 by 10 accepted");c.QuickColumns=6;bool invalid=false;try{c.Validate();}catch{invalid=true;}Check(invalid,"invalid column count rejected");c.QuickColumns=3;c.QuickRows=2;
   store.Save();var app=(App)Application.Current;app.Dock=new DockWindow();app.Dock.Show();
@@ -41,7 +41,7 @@ internal static class QuickProbes {
   bar.HoverAt(null);Pump(700);Check(Math.Abs(bar.IconScale(0)-1)<.001&&!bar.Animating,"mouse leave eases back and stops rendering");
   var button=Children(bar).OfType<Button>().First();button.ApplyTemplate();
   Check(button.Template.Triggers.Count==0&&Children(button).OfType<Border>().All(b=>b.Background is SolidColorBrush brush&&brush.Color.A==0),"icon template contains no blue hover or press background");
-  var buttonImage=Children(button).OfType<Image>().Single();Check(buttonImage.RenderTransformOrigin==new Point(.5,1),"icon enlargement grows upwards from baseline");button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));Pump(1500);Check(File.Exists(marker)&&!bar.IsVisible,"launch receives arguments and closes quickbar");
+  var buttonImage=Children(button).OfType<ApplicationIcon>().Single();Check(buttonImage.RenderTransformOrigin==new Point(.5,1),"icon enlargement grows upwards from baseline");button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));Pump(1500);Check(File.Exists(marker)&&!bar.IsVisible,"launch receives arguments and closes quickbar");
   bar.Open();Pump(1500);bar.Dismiss();Pump(1500);Check(!bar.IsVisible&&bar.Reveal==0&&!bar.Animating,"reverse spring returns to dot and stops");
   bar.Open();Pump(1500);
   // A dedicated blank test window receives the synthetic outside click.

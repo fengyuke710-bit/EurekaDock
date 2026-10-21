@@ -10,7 +10,11 @@ internal sealed class FogIcon {
  internal readonly int Width,Height,Padding;
  readonly byte[][] levels=new byte[4][];
  internal readonly BitmapSource Sharp;
+ readonly BitmapSource source;
+ IconReflection? reflection;
+ internal IconReflection Reflection=>reflection??=new IconReflection(source);
  internal FogIcon(BitmapSource source,double blurPixels) {
+  this.source=source;
   var input=new FormatConvertedBitmap(source,PixelFormats.Pbgra32,null,0);
   Padding=(int)Math.Ceiling(blurPixels*3)+2;
   Width=input.PixelWidth+Padding*2;Height=input.PixelHeight+Padding*2;
@@ -22,7 +26,7 @@ internal sealed class FogIcon {
   for(int i=1;i<4;i++)levels[i]=Blur(levels[0],Width,Height,blurPixels*i/3);
   Sharp=BitmapSource.Create(Width,Height,96,96,PixelFormats.Pbgra32,null,levels[0],Width*4);Sharp.Freeze();
  }
- static byte[] Blur(byte[] src,int width,int height,double sigma) {
+ internal static byte[] Blur(byte[] src,int width,int height,double sigma) {
   if(sigma<.1)return src;
   int radius=(int)Math.Ceiling(3*sigma);var weights=new double[radius*2+1];double sum=0;
   for(int k=-radius;k<=radius;k++){weights[k+radius]=Math.Exp(-k*k/(2*sigma*sigma));sum+=weights[k+radius];}

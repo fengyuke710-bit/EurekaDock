@@ -22,13 +22,15 @@ internal sealed class DockWindow : Window {
  int retryCount;
  bool hidden,menuOpen,attached;
  double anchorTop,baseLeft,baseWidth,baseHeight,sideWidth;
+ double iconHeadroom,iconReflectionSpace;
  QuickBarWindow? quickBar;
  MusicWindow? music;
  void SyncMusic(){if(closing)return;if(App.Store.Config.MusicEnabled)music??=new MusicWindow(this);music?.Sync(IsVisible);}
  internal MusicWindow? Music=>music;
  internal bool IsClosing=>closing;
  internal bool Revealing;
- internal double MusicAnchorTop=>anchorTop;
+ internal double MusicAnchorTop=>anchorTop+iconHeadroom;
+ internal double IconReflectionSpace=>iconReflectionSpace;
  internal void PreviewMusicColor(){music?.Line.Refresh();music?.Bars.Refresh();}
  internal double QuickReveal=>quickBar?.Reveal??0;
  internal bool QuickMorphVisible=>quickBar?.IsVisible==true;
@@ -115,9 +117,11 @@ internal sealed class DockWindow : Window {
   var screen=System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
   var dpi=VisualTreeHelper.GetDpi(this);
   double screenWidth=screen.Width/dpi.DpiScaleX, screenHeight=screen.Height/dpi.DpiScaleY;
-  baseWidth=screenWidth*c.WidthFraction;sideWidth=c.IconSize*1.6+38;baseHeight=c.IconSize*1.7+30;
+  double headroom=iconHeadroom=c.DockEnabled?IconEffects.Headroom(c,dpi.DpiScaleY):0,reflection=iconReflectionSpace=c.DockEnabled?IconEffects.ReflectionSpace(c,dpi.DpiScaleY):0,logicalHeight=c.IconSize*1.7+30;
+  baseWidth=screenWidth*c.WidthFraction;sideWidth=c.IconSize*1.6+38;baseHeight=logicalHeight+headroom+reflection;
+  Accessories.Margin=new Thickness(0,0,0,reflection);
   baseLeft=screen.X/dpi.DpiScaleX+(screenWidth-baseWidth)/2;
-  anchorTop=screen.Y/dpi.DpiScaleY+screenHeight*c.VerticalFraction-baseHeight;
+  anchorTop=screen.Y/dpi.DpiScaleY+screenHeight*c.VerticalFraction-logicalHeight-headroom;
   Surface.Reload();
   Accessories.Reload();
   RefreshVisibility();
@@ -139,6 +143,9 @@ internal sealed class DockSurface : FrameworkElement {
  readonly Dictionary<int,HoverResponse> hoverResponses=new();
  readonly Dictionary<string,FogIcon?> iconCache=new();
  readonly DrawingGroup scene=new();
+ readonly DrawingGroup reflections=new();
+ readonly Dictionary<Guid,double> bounces=new();
+ double maskWidth=-1,maskHeight=-1,maskLeft=-1,maskRight=-1;
  readonly List<(Rect rect,DockItem item)> hits=new();
  readonly Stopwatch time=Stopwatch.StartNew();
  readonly DispatcherTimer hold=new();
@@ -180,7 +187,8 @@ internal sealed class DockSurface : FrameworkElement {
    icons[item.Id]=icon;
   }
   foreach(var key in iconCache.Keys.Where(k=>!active.Contains(k)).ToArray())iconCache.Remove(key);
-  fogFrames.Clear();
+  fogFrames.Clear();bounces.Clear();
+  if(C.IconDisplayEffect=="reflection")foreach(var icon in icons.Values)if(icon!=null)_=icon.Reflection;
   InvalidateVisual();Wake();
  }
  void ConfigureMotion()=>Motion.Configure(C.InfiniteCarousel,items.Count,Math.Max(0,(ActualWidth-C.IconSize-4)/(2*Pitch)));
@@ -188,14 +196,14 @@ internal sealed class DockSurface : FrameworkElement {
  internal void RefreshHover() {hover=IsMouseOver?Mouse.GetPosition(this).X:null;Wake();}
  internal void SetBackgroundSuspended(bool value){
   backgroundSuspended=value;
-  if(value){CancelDrag();hover=null;hoverResponses.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
+  if(value){CancelDrag();hover=null;hoverResponses.Clear();bounces.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
   else {if(resourcesReleased)Reload();RefreshHover();}
  }
- internal void ReleaseBackgroundResources(){scene.Children.Clear();icons.Clear();iconCache.Clear();fogFrames.Clear();hits.Clear();resourcesReleased=true;InvalidateVisual();}
+ internal void ReleaseBackgroundResources(){scene.Children.Clear();reflections.Children.Clear();bounces.Clear();icons.Clear();iconCache.Clear();fogFrames.Clear();hits.Clear();resourcesReleased=true;InvalidateVisual();}
  internal void SetRevealPaused(bool value){
   if(revealPaused==value)return;
   revealPaused=value;
-  if(value){CancelDrag();hover=null;hoverResponses.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
+  if(value){CancelDrag();hover=null;hoverResponses.Clear();bounces.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
   else RefreshHover();
   InvalidateVisual();
  }
@@ -215,9 +223,11 @@ internal sealed class DockSurface : FrameworkElement {
    response.Step(target,dt);hoverMoving|=response.Moving;
   }
   foreach(int j in hoverResponses.Keys.Where(j=>j<baseSlot-slots||j>baseSlot+slots).ToArray())hoverResponses.Remove(j);
+  if(bounces.Count>0)foreach(var id in bounces.Where(p=>now-p.Value>=IconEffects.BounceDuration).Select(p=>p.Key).ToArray())bounces.Remove(id);
   InvalidateVisual();
-  if((!Motion.Moving||Motion.Dragging)&&!hoverMoving) {CompositionTarget.Rendering-=Frame;rendering=false;}
+  if((!Motion.Moving||Motion.Dragging)&&!hoverMoving&&bounces.Count==0) {CompositionTarget.Rendering-=Frame;rendering=false;}
  }
+ internal void PlayLaunchFeedback(DockItem item){if(C.IconClickFeedback!="bounce"||backgroundSuspended||revealPaused)return;bounces[item.Id]=time.Elapsed.TotalSeconds;Wake();}
  DockItem? Hit(Point p)=>hits.LastOrDefault(h=>h.rect.Contains(p)).item;
  void Down(object s,MouseButtonEventArgs e) {
   if(Owner.MenuOpen)return;
@@ -243,7 +253,7 @@ internal sealed class DockSurface : FrameworkElement {
   if(!pressed)return;
   var item=pressedItem;bool wasDrag=dragged;pressed=false;hold.Stop();ReleaseMouseCapture();
   if(wasDrag) {Motion.Release(time.Elapsed.TotalSeconds-lastMove>.1?0:dragVelocity);Wake();}
-  else {Motion.Release(0);Wake(); if(item!=null&&Hit(e.GetPosition(this))?.Id==item.Id) Owner.Launch(item);}
+  else {Motion.Release(0);Wake(); if(item!=null&&Hit(e.GetPosition(this))?.Id==item.Id){PlayLaunchFeedback(item);Owner.Launch(item);}}
   dragged=false;e.Handled=true;
  }
  internal void CancelDrag() {pressed=false;dragged=false;hold.Stop();ReleaseMouseCapture();Motion.Release(0);Wake();}
@@ -253,6 +263,17 @@ internal sealed class DockSurface : FrameworkElement {
   // One alpha step enables wheel/drag in spaces between icons on a layered HWND.
   dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1,0,0,0)),null,new Rect(RenderSize));
   if(items.Count==0)return;
+  bool mirror=C.IconDisplayEffect=="reflection";
+  double leftFade=C.InfiniteCarousel?C.FadeWidth:C.FadeWidth*FogIcon.Fade(Motion.Maximum-Motion.Position,.75),rightFade=C.InfiniteCarousel?C.FadeWidth:C.FadeWidth*FogIcon.Fade(Motion.Position-Motion.Minimum,.75);
+  using var reflectionContext=mirror?reflections.Open():null;
+  if(mirror){
+   reflectionContext!.DrawRectangle(Brushes.Transparent,null,new Rect(RenderSize));
+   if(maskWidth!=ActualWidth||maskHeight!=ActualHeight||maskLeft!=leftFade||maskRight!=rightFade){
+    var mask=new LinearGradientBrush{StartPoint=new Point(0,0),EndPoint=new Point(1,0)};
+    for(int i=0;i<=96;i++){double x=ActualWidth*i/96;byte alpha=(byte)Math.Round(255*Math.Min(FogIcon.Fade(x,leftFade),FogIcon.Fade(ActualWidth-x,rightFade)));mask.GradientStops.Add(new GradientStop(Color.FromArgb(alpha,255,255,255),i/96.0));}mask.Freeze();reflections.OpacityMask=mask;var clip=new RectangleGeometry(new Rect(RenderSize));clip.Freeze();reflections.ClipGeometry=clip;maskWidth=ActualWidth;maskHeight=ActualHeight;maskLeft=leftFade;maskRight=rightFade;
+   }
+   dc.DrawDrawing(reflections);
+  }
   int slots=(int)Math.Ceiling(ActualWidth/Pitch/2)+2,baseSlot=(int)Math.Floor(-Motion.VisualPosition);
   foreach(int j in fogFrames.Keys.Where(j=>j<baseSlot-slots||j>baseSlot+slots).ToArray())fogFrames.Remove(j);
   for(int j=baseSlot-slots;j<=baseSlot+slots;j++) {
@@ -260,14 +281,16 @@ internal sealed class DockSurface : FrameworkElement {
    var item=items[C.InfiniteCarousel?Carousel.Wrap(j,items.Count):j];
    double x=ActualWidth/2+(j+Motion.VisualPosition)*Pitch;
    double scale=1+(hoverResponses.TryGetValue(j,out var response)?response.Value:0);
-   double size=C.IconSize*scale, bottom=ActualHeight-12;
+   double size=C.IconSize*scale, bottom=ActualHeight-12-Owner.IconReflectionSpace;
    if(!C.InfiniteCarousel&&j==0&&Math.Abs(Motion.Position-Motion.Maximum)<.001)x=Math.Max(x,size/2+2);
    if(!C.InfiniteCarousel&&j==items.Count-1&&Math.Abs(Motion.Position-Motion.Minimum)<.001)x=Math.Min(x,ActualWidth-size/2-2);
-   var rect=new Rect(x-size/2,bottom-size,size,size);
-   double leftFade=C.InfiniteCarousel?C.FadeWidth:C.FadeWidth*FogIcon.Fade(Motion.Maximum-Motion.Position,.75),rightFade=C.InfiniteCarousel?C.FadeWidth:C.FadeWidth*FogIcon.Fade(Motion.Position-Motion.Minimum,.75);
+   var restRect=new Rect(x-size/2,bottom-size,size,size);
+   double lift=bounces.TryGetValue(item.Id,out double began)?C.IconSize*.55*IconEffects.Bounce(time.Elapsed.TotalSeconds-began):0;
+   var rect=new Rect(restRect.X,restRect.Y-lift,size,size);
    if(icons.TryGetValue(item.Id,out var icon)&&icon!=null) {
     var padded=icon.Padded(rect);
     if(padded.Right<0||padded.Left>ActualWidth)continue;
+    if(mirror)icon.Reflection.Draw(reflectionContext!,restRect,lift);
     if((leftFade<=0||padded.Left>=leftFade)&&(rightFade<=0||padded.Right<=ActualWidth-rightFade))dc.DrawImage(icon.Sharp,padded);
     else {
      if(!fogFrames.TryGetValue(j,out var frame)||!frame.Matches(icon))fogFrames[j]=frame=new FogFrame(icon);
@@ -275,7 +298,7 @@ internal sealed class DockSurface : FrameworkElement {
     }
    }
    else {dc.DrawRoundedRectangle(Brushes.SlateGray,null,rect,12,12);var text=new FormattedText(item.Name.Length>0?item.Name[..1]:"?",System.Globalization.CultureInfo.CurrentCulture,FlowDirection.LeftToRight,new Typeface("Segoe UI"),size*.45,Brushes.White,VisualTreeHelper.GetDpi(this).PixelsPerDip);dc.DrawText(text,new Point(rect.X+(size-text.Width)/2,rect.Y+(size-text.Height)/2));}
-   hits.Add((rect,item));
+   rect.Union(restRect);hits.Add((rect,item));
   }
  }
  public void Dispose() {SetBackgroundSuspended(true);ReleaseBackgroundResources();items.Clear();}

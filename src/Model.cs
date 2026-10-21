@@ -24,6 +24,8 @@ public sealed class Configuration {
  public bool SuspendWhenCovered {get;set;}=true;
  public int Version {get;set;}=1;
  public double IconSize {get;set;}=40.1320754716981;
+ public string IconClickFeedback {get;set;}="default";
+ public string IconDisplayEffect {get;set;}="default";
  public double Gap {get;set;}=25.188679245283;
  public double WidthFraction {get;set;}=.5;
  public double VerticalFraction {get;set;}=.946686320754718;
@@ -54,6 +56,8 @@ public sealed class Configuration {
  public double Damping {get;set;}=20;
  public List<DockItem> Items {get;set;}=new();
  public void Validate() {
+  if(IconClickFeedback!="default"&&IconClickFeedback!="bounce")IconClickFeedback="default";
+  if(IconDisplayEffect!="default"&&IconDisplayEffect!="reflection")IconDisplayEffect="default";
   if(MusicStyle!="line"&&MusicStyle!="bars")MusicStyle="line";
   if(MusicColorMode!="original"&&MusicColorMode!="solid"&&MusicColorMode!="custom")MusicColorMode="original";
   if(BarColorMode!="solid"&&BarColorMode!="custom")BarColorMode="solid";

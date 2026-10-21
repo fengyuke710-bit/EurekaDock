@@ -24,6 +24,7 @@ public partial class App : Application {
   var data=e.Args.FirstOrDefault(x=>x.StartsWith("--data="))?[7..];
   Store=new Store(data??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"EurekaDock"));
   if(e.Args.Contains("--coverage-window-probe")){FullscreenProbes.RunCoverageWindow(e.Args.First(x=>x.StartsWith("--coverage-phase="))[17..]);return;}
+  if(e.Args.Contains("--icon-effects-probe")){try{IconEffectsProbes.Run(Store);Shutdown(0);}catch(Exception ex){File.WriteAllText(Path.Combine(Store.Root,"icon-effects-failure.txt"),ex.ToString());Shutdown(1);}return;}
   if(e.Args.Contains("--performance-probe")){try{PerformanceProbes.Run(Store);Shutdown(0);}catch(Exception ex){File.WriteAllText(Path.Combine(Store.Root,"performance-failure.txt"),ex.ToString());Shutdown(1);}return;}
   if(e.Args.Contains("--fullscreen-probe")) {try{FullscreenProbes.Run(Store);Shutdown(0);}catch(Exception ex){File.WriteAllText(Path.Combine(Store.Root,"fullscreen-failure.txt"),ex.ToString());Shutdown(1);}return;}
   if(e.Args.Contains("--default-settings-probe")) {try{DefaultSettingsProbes.Run(Store);Shutdown(0);}catch(Exception ex){File.WriteAllText(Path.Combine(Store.Root,"default-settings-failure.txt"),ex.ToString());Shutdown(1);}return;}

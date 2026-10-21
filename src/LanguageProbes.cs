@@ -26,7 +26,7 @@ internal static class LanguageProbes {
   var loaded=new Store(store.Root);loaded.Load();Check(loaded.Config.Language=="en","language persists to configuration");
   foreach(string language in new[]{"en","zh-CN"}){
    settings.ChangeLanguage(language);
-   for(int i=0;i<8;i++){
+   for(int i=0;i<9;i++){
     settings.SelectPage(i);Pump();settings.UpdateLayout();
     string[] texts=Children(settings).OfType<TextBlock>().Select(x=>x.Text).Where(x=>!string.IsNullOrEmpty(x)).ToArray();
     if(language=="en")Check(!texts.Any(x=>Regex.IsMatch(x,@"[\p{IsCJKUnifiedIdeographs}]")&&!x.Contains("简体中文")&&!x.Contains("界面语言")),"English page "+i+" has no untranslated app text");

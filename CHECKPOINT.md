@@ -2,22 +2,26 @@
 
 ## Completed
 
-- Bar Wave starts with bars occupying the full visualizer area. There is no placeholder artwork or reserved title/cover column before a song starts.
-- A playing track opens artwork, record, title and artist with the existing elastic transition. Pausing retains the visible artwork and text, including while other audio plays. Removing the media session closes the cover and lets bars expand into its space.
-- A paused session cannot open artwork on a cold start before playback. After desktop suspension, a previously visible paused session can restore its artwork once the session has been checked again.
-- The media reader distinguishes a removed session from a paused session. Missing sessions clear retained metadata; transient read failures preserve the last details as paused.
-- Live audio and fresh media-session checks begin during the unified popup. Stale cached artwork is not shown while the fresh session is pending. One fixed overlay continues to scale the music and Dock together; the handoff does not restart workers.
-- The older other-audio cover-suppression rule is removed. Chinese and English settings/help describe the new defaults.
-- No personal configuration or application list migration is required. Version history uses Git; no old runtime copies are created.
+- Added Settings → App Icons between Dock and Apps. Click feedback and resting appearance are independent, immediately saved selectors. Both use Default for new and existing configurations, preserving the current look and interaction.
+- Bounce (macOS style) plays three diminishing upward hops after a confirmed launch click. Dragging and context menus do not trigger it. Pulse state expires and rendering stops at the resting position; suspension cancels it immediately.
+- Mirror reflection uses a cached premultiplied bitmap with perspective widening towards the viewer, progressively increasing blur, and a downward opacity fade. It adds no background tray. Dock reflections follow the carousel's edge mask and existing hover size.
+- Both effects apply to Dock and Quick Panel app icons. Quick Panel launches still close the panel automatically. Effect insets are inside its scroll viewport to prevent clipping at large icon/hover settings.
+- DPI-aware physical-pixel padding preserves the Dock icon baseline, music anchor and left controls while providing room for bounce and reflection. Music-only mode does not reserve unnecessary Dock-effect space.
+- Added bilingual setting descriptions, an in-app tutorial, README instructions and a version-controlled portable-package manual. The package also includes EurekaDock's MIT license separately from the Microsoft runtime license.
+- Existing full-width Bar Wave defaults, paused-cover retention until player/session closure, live visualizer popup and fullscreen suspension behavior are preserved. No personal configuration migration is required.
 
 ## Validation
 
-Release build has zero warnings and errors. All 140 related checks passed: 56 fullscreen/lifecycle, 39 bar visualization, 31 music/audio and 14 independent-layout checks. Coverage includes default full width, first playback, paused artwork with other audio, player/session closure, elastic transitions, colors, actual loopback audio, fresh-session popup behavior, cancellation and idle suspension. Expanded and artwork-visible captures were visually inspected. Layout checks account for the transparent animation padding. Results and captures are kept in the local work directory.
+Release build: zero warnings/errors. All 214 related checks passed:
 
-The previous performance optimizations remain: covered windows are destroyed, audio workers stop, startup/suspension working-set reclamation happens once, and retained drawing resources avoid rebuilding the bar visual each frame. No refresh-rate cap or animation-response change is introduced.
+- 23 icon-effect checks: legacy/default configuration, fallback values, persistence, actual GUI selectors, cached reflection, color alpha, perspective, progressive blur, physical baseline, bounded bounce, idle stop, suspension and actual Quick Panel target launch.
+- 22 finite-carousel edge checks; 23 Quick Panel checks; 37 bilingual/settings checks across nine pages.
+- 56 fullscreen/lifecycle checks, 8 default-configuration checks and 45 core checks.
+
+Visual QA includes Dock reflection and bounce, both settings languages, Quick Panel reflection and 128-DIP icons at 1.5× hover. The latter is checked against the real scroll viewport, including both reflection edges and the top of the enlarged icon.
 
 ## Deployment and limits
 
-The running runtime and initialized portable ZIP are synchronized after validation, with installed/package hashes checked against the tested build. Existing personal settings and application lists are preserved. Source changes and checkpoints are synchronized to the existing private GitHub repository.
+The running runtime and initialized portable ZIP are synchronized after validation; installed and archived application files match the tested build. Personal configuration and application lists remain unchanged. Git stores the preceding version and the new checkpoint; source and documentation are synchronized to the existing public MIT-licensed GitHub repository.
 
-Track details and playback state come from Windows media sessions. Detecting a closed player follows the existing two-second metadata polling interval. No network lookup is used.
+Reflection pixels are prepared only when icon resources/effect settings change. Idle icons have no animation timer; music visualization continues to use its separate existing workers. Quick Panel launch feedback runs during the panel's normal closing animation rather than delaying target launch or panel dismissal.
