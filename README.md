@@ -8,6 +8,12 @@ This repository contains the Windows source code and build scripts. Personal con
 
 Author: **EurekaOrette**
 
+## 开源许可 / License
+
+本项目采用 [MIT 许可证](LICENSE)开源，允许使用、修改和分发，包括商业用途；分发时须保留版权声明和许可证。第三方组件和 .NET 运行时遵循各自的许可证。
+
+EurekaDock is open source under the [MIT License](LICENSE). Use, modification, and redistribution, including commercial use, are permitted with the copyright and license notices retained. Third-party components and the .NET runtime remain subject to their respective licenses.
+
 ## 构建
 
 需要 Windows 11 x64、.NET 10 SDK、Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”组件和 Windows SDK。在 PowerShell 中运行：
@@ -54,4 +60,4 @@ git push origin main
 git push origin --tags
 ```
 
-远程仓库使用 GitHub 私有仓库；登录由 GitHub CLI 与当前用户凭据存储管理。
+远程仓库为 [GitHub 公开开源仓库](https://github.com/fengyuke710-bit/EurekaDock)；推送权限由 GitHub 账号权限管理，登录由 GitHub CLI 与当前用户凭据存储管理。
