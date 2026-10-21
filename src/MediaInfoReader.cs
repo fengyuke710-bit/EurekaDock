@@ -44,10 +44,10 @@ internal sealed class MediaInfoReader:IDisposable{
      ImageSource? artwork=null;
      if(size>0)try{using var stream=new MemoryStream(bytes,0,size);var image=new BitmapImage();image.BeginInit();image.CacheOption=BitmapCacheOption.OnLoad;image.DecodePixelWidth=256;image.StreamSource=stream;image.EndInit();image.Freeze();artwork=image;}catch(Exception ex){App.Store.Log("Media artwork: "+ex.Message);}
      if(result==0){var current=new TrackInfo(title.ToString(),artist.ToString(),artwork,playing!=0,album.ToString());retained=current.Available?current:retained with {Playing=false};}
-     else retained=retained with {Playing=false};
+     else retained=result==1?TrackInfo.Empty:retained with {Playing=false};
      if(!stop.WaitOne(0))consume(retained);previous=key;
     }
-   }catch(Exception ex){if(previousError!=-1){App.Store.Log("Media info: "+ex.Message);previousError=-1;}if(!stop.WaitOne(0))consume(retained);}
+   }catch(Exception ex){if(previousError!=-1){App.Store.Log("Media info: "+ex.Message);previousError=-1;}retained=retained with {Playing=false};if(!stop.WaitOne(0))consume(retained);}
    if(stop.WaitOne(2000))break;
   }
  }

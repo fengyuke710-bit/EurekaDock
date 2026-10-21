@@ -5,7 +5,7 @@ using System.Windows.Media;
 namespace EurekaDock;
 internal sealed class MusicBars:FrameworkElement{
  readonly double[] target=new double[36],level=new double[36];readonly Stopwatch time=Stopwatch.StartNew();bool rendering;double last,angle,phase;
- TrackInfo track=TrackInfo.Empty,displayTrack=TrackInfo.Empty;bool suppressTrackInfo;double reveal=1,revealVelocity;
+ TrackInfo track=TrackInfo.Empty,displayTrack=TrackInfo.Empty;bool suppressTrackInfo=true;double reveal,revealVelocity;
  readonly LinearGradientBrush?[] fills=new LinearGradientBrush?[36];
  readonly DrawingGroup scene=new(),albumLayer=new(),textLayer=new();
  readonly ScaleTransform albumScale=new(),textScale=new();
@@ -31,15 +31,15 @@ internal sealed class MusicBars:FrameworkElement{
  internal Color TrackTextColor=>WaveColors.Sample(App.Store.Config,-phase*.10,null,true);
  internal double BandLevel(int index)=>level[index];
  internal double BarHeight(int i)=>3*Scale+Math.Clamp(level[i]/2.05,0,1)*(CoverSize/2*(1+.5*(1-Math.Clamp(reveal,0,1)))-3*Scale);
- internal void SetTrack(TrackInfo value){track=value;if(value.Available&&displayTrack!=value){displayTrack=value;sceneValid=false;InvalidateVisual();}if(track.Available)Wake();}
+ internal void SetTrack(TrackInfo value,bool restorePaused=false){track=value;if(value.Available&&displayTrack!=value){displayTrack=value;sceneValid=false;InvalidateVisual();}SuppressTrackInfo(!value.Available||(!value.Playing&&suppressTrackInfo&&!restorePaused));if(!suppressTrackInfo)Wake();}
  // Prime the frozen reveal without enrolling the record or waveform in rendering.
- internal void SetStaticTrack(TrackInfo value,bool hidden){track=displayTrack=value;suppressTrackInfo=hidden;reveal=hidden?0:1;revealVelocity=0;sceneValid=false;InvalidateVisual();}
+ internal void SetStaticTrack(TrackInfo value,bool hidden){track=displayTrack=value;suppressTrackInfo=hidden||!value.Available;reveal=suppressTrackInfo?0:1;revealVelocity=0;sceneValid=false;InvalidateVisual();}
  internal bool TrackInfoHidden=>suppressTrackInfo;
  internal double TrackReveal=>reveal;
  internal void SuppressTrackInfo(bool value){if(suppressTrackInfo==value)return;suppressTrackInfo=value;if(value&&Math.Abs(revealVelocity)<.02&&reveal>.99)revealVelocity=3.6;Wake();}
  internal void Feed(float[] incoming){bool changed=false;for(int i=0;i<36;i++){double start=i*48.0/36,end=(i+1)*48.0/36,power=0;for(int k=(int)start;k<Math.Ceiling(end);k++){double weight=Math.Max(0,Math.Min(end,k+1)-Math.Max(start,k));power+=incoming[k]*incoming[k]*weight;}double magnitude=Math.Max(0,Math.Sqrt(power/(end-start))-.00035);double position=i/35.0,balance=Math.Clamp(position/.65,0,1),frequencyGain=1+.55*position*position*(3-2*position)+.12*balance*balance*(3-2*balance);double next=VolumeResponse(magnitude*frequencyGain,App.Store.Config.MusicSensitivity);changed|=Math.Abs(next-target[i])>.0001;target[i]=next;}if(changed)Wake();}
  internal static double VolumeResponse(double magnitude,double sensitivity){double x=Math.Clamp(magnitude*sensitivity*4,0,1);return 2.05*(.19*x+.81*x*x);}
- internal void Refresh(){sceneValid=false;InvalidateVisual();if(track.Available||Math.Abs(reveal-(suppressTrackInfo?0:1))>.0001)Wake();}
+ internal void Refresh(){sceneValid=false;InvalidateVisual();if((track.Available&&!suppressTrackInfo)||Math.Abs(reveal-(suppressTrackInfo?0:1))>.0001)Wake();}
  void Wake(){if(rendering)return;rendering=true;last=time.Elapsed.TotalSeconds;CompositionTarget.Rendering+=Frame;}
  void Frame(object? sender,EventArgs e){
   double now=time.Elapsed.TotalSeconds,dt=Math.Clamp(now-last,0,.05);last=now;bool moving=false;
@@ -55,7 +55,7 @@ internal sealed class MusicBars:FrameworkElement{
   if(sceneValid)UpdateScene();else InvalidateVisual();
   if(!moving&&(!track.Available||reveal==0)){CompositionTarget.Rendering-=Frame;rendering=false;}
  }
- internal void Stop(){CompositionTarget.Rendering-=Frame;rendering=false;Array.Clear(target);Array.Clear(level);track=displayTrack=TrackInfo.Empty;reveal=suppressTrackInfo?0:1;revealVelocity=0;scene.Children.Clear();albumLayer.Children.Clear();textLayer.Children.Clear();Array.Clear(barShapes);Array.Clear(barDrawings);Array.Clear(fills);cachedArtwork=null;artworkBrush=null;titleLayout=artistLayout=null;sceneValid=false;InvalidateVisual();}
+ internal void Stop(){CompositionTarget.Rendering-=Frame;rendering=false;Array.Clear(target);Array.Clear(level);track=displayTrack=TrackInfo.Empty;suppressTrackInfo=true;reveal=revealVelocity=0;scene.Children.Clear();albumLayer.Children.Clear();textLayer.Children.Clear();Array.Clear(barShapes);Array.Clear(barDrawings);Array.Clear(fills);cachedArtwork=null;artworkBrush=null;titleLayout=artistLayout=null;sceneValid=false;InvalidateVisual();}
  internal void Suspend(){CompositionTarget.Rendering-=Frame;rendering=false;}
  void Artwork(DrawingContext dc,Rect rect){
   if(!ReferenceEquals(cachedArtwork,displayTrack.Artwork)){cachedArtwork=displayTrack.Artwork;artworkBrush=cachedArtwork==null?null:Frozen(new ImageBrush(cachedArtwork){Stretch=Stretch.UniformToFill});}

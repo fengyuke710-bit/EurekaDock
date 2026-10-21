@@ -116,22 +116,22 @@ internal static class FullscreenProbes {
   Check(app.Dock!=null&&desktop.Revealing&&desktop.RevealScale<.1,"leaving fullscreen creates new windows starting at a tiny unified scale");
   Rect dockRect=new(app.Dock!.Left,app.Dock.Top,app.Dock.Width,app.Dock.Height),overlayRect=desktop.RevealBounds;
   var restoredMusic=app.Dock.Music!;Rect musicRect=new(restoredMusic.Left,restoredMusic.Top,restoredMusic.Width,restoredMusic.Height);
-  Check(ReferenceEquals(restoredMusic.Bars.Track.Artwork,artwork)&&restoredMusic.Bars.TitleText=="Reveal artwork"&&restoredMusic.Bars.TrackReveal==1&&restoredMusic.CaptureRunning&&!restoredMusic.MetadataRunning,
-   "reveal starts audio immediately while artwork and metadata layout remain primed");
+  Check(restoredMusic.Bars.TrackReveal==0&&!restoredMusic.Bars.Track.Available&&restoredMusic.CaptureRunning&&restoredMusic.MetadataRunning,
+   "reveal starts expanded with live audio and a fresh session check instead of stale cached artwork");
   Check(desktop.RevealAlignmentError<.001,"snapshot and live client origins align to the same physical pixels");
-  Check(SnapshotArtworkPixels(Path.Combine(store.Root,"reveal-with-artwork.png"))>200,"frozen composite contains the actual album pixels before popup completion");
+  Check(SnapshotArtworkPixels(Path.Combine(store.Root,"reveal-session-pending.png"))==0,"unverified cached artwork is absent while a fresh session is pending");
   string quietFrame=WaveFingerprint();tone.PlayLooping();
   bool fixedBounds=true,idleUntilComplete=true,waveResponded=false,pixelsChanged=false;
   var frames=new List<double>();for(int i=0;i<40;i++){
    Pump(20);frames.Add(desktop.RevealScale);
    if(desktop.Revealing){
     fixedBounds&=desktop.RevealAlignmentError<.001&&desktop.RevealBounds==overlayRect&&new Rect(app.Dock.Left,app.Dock.Top,app.Dock.Width,app.Dock.Height)==dockRect&&new Rect(restoredMusic.Left,restoredMusic.Top,restoredMusic.Width,restoredMusic.Height)==musicRect;
-    idleUntilComplete&=!app.Dock.Surface.BackgroundAnimating&&!app.Dock.Accessories.Animating&&restoredMusic.CaptureRunning&&!restoredMusic.MetadataRunning&&app.Dock.Opacity==0&&restoredMusic.Opacity==0&&!app.Dock.IsHitTestVisible;
+    idleUntilComplete&=!app.Dock.Surface.BackgroundAnimating&&!app.Dock.Accessories.Animating&&restoredMusic.CaptureRunning&&restoredMusic.MetadataRunning&&app.Dock.Opacity==0&&restoredMusic.Opacity==0&&!app.Dock.IsHitTestVisible;
     if(i>=8){waveResponded|=Enumerable.Range(0,36).Any(n=>restoredMusic.Bars.BandLevel(n)>.0001);pixelsChanged|=WaveFingerprint()!=quietFrame;}
    }
   }
   Check(fixedBounds,"Dock, music and single snapshot HWND bounds stay fixed throughout reveal");
-  Check(idleUntilComplete,"carousel, hover, controls and metadata stay paused while audio runs during reveal");
+  Check(idleUntilComplete,"carousel, hover and controls stay paused while live audio and session checks run during reveal");
   Check(waveResponded,"real loopback audio moves bar levels before reveal completes");
   Check(pixelsChanged,"live music brush changes the visible composite pixels during reveal");
   tone.Stop();
@@ -140,15 +140,16 @@ internal static class FullscreenProbes {
   Pump(550);Check(!desktop.Revealing&&app.Dock!.Opacity==1&&app.Dock.IsHitTestVisible,"reveal settles and releases frame rendering with input restored");
   Check(app.Dock!.IsVisible&&app.Dock.Surface.CachedIconCount>0&&Math.Abs(app.Dock.Surface.Motion.Position-savedPosition)<.001,"recreation restores icon cache and carousel position");
   Check(Application.Current.Windows.OfType<MusicWindow>().Any(w=>w.IsVisible&&w.Opacity==1&&!w.IsHitTestVisible),"music joins the unified reveal and restores noninteractive behavior");
-  Check(restoredMusic.CaptureRunning&&restoredMusic.MetadataRunning&&!Application.Current.Windows.OfType<Window>().Any(w=>w.Title=="EurekaDock reveal"),"completion removes overlay and starts metadata without interrupting audio");
+  Check(restoredMusic.CaptureRunning&&restoredMusic.MetadataRunning&&!Application.Current.Windows.OfType<Window>().Any(w=>w.Title=="EurekaDock reveal"),"completion removes overlay without interrupting audio or session checks");
   Check(Math.Abs(app.Dock.Surface.Motion.Target-savedPosition)<.001,"reveal handoff does not snap a restored fractional carousel position to another slot");
-  restoredMusic.SuppressForOtherAudio();background=true;desktop.Refresh();background=false;desktop.Refresh();
+  restoredMusic.Bars.SetTrack(TrackInfo.Empty);background=true;desktop.Refresh();background=false;desktop.Refresh();
   var hiddenMusic=app.Dock!.Music!;
-  Check(hiddenMusic.TrackInfoHidden&&hiddenMusic.Bars.TrackInfoHidden&&hiddenMusic.Bars.TrackReveal==0&&!hiddenMusic.Bars.Track.Available&&hiddenMusic.CaptureRunning&&!hiddenMusic.MetadataRunning,
+  Check(hiddenMusic.TrackInfoHidden&&hiddenMusic.Bars.TrackInfoHidden&&hiddenMusic.Bars.TrackReveal==0&&!hiddenMusic.Bars.Track.Available&&hiddenMusic.CaptureRunning&&hiddenMusic.MetadataRunning,
    "a previously hidden cover returns directly as the expanded waveform-only layout");
   Check(SnapshotArtworkPixels(Path.Combine(store.Root,"reveal-without-artwork.png"))==0,"waveform-only snapshot contains no stale album pixels");
-  Pump(150);Check(desktop.Revealing&&hiddenMusic.Bars.TrackReveal==0,
-   "waveform-only reveal never flashes or animates a discarded album cover");
+  Pump(150);Check(desktop.Revealing&&(hiddenMusic.Bars.TrackReveal==0||
+   (hiddenMusic.Bars.Track.Available&&!ReferenceEquals(hiddenMusic.Bars.Track.Artwork,artwork))),
+   "waveform-only reveal can open fresh session artwork without flashing a discarded cached cover");
   background=true;desktop.Refresh();Pump(50);background=false;desktop.Refresh();Pump(80);background=true;desktop.Refresh();Pump(650);
   Check(app.Dock==null&&!desktop.Revealing&&!Application.Current.Windows.OfType<MusicWindow>().Any(),"rapid fullscreen changes safely cancel an in-progress reveal");
   Check(MusicAudio.Status=="已关闭","cancelling reveal releases its live audio worker");

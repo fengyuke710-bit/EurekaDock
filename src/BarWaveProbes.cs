@@ -13,6 +13,7 @@ namespace EurekaDock;
 internal static class BarWaveProbes{
  static IEnumerable<DependencyObject> Children(DependencyObject x){yield return x;for(int i=0;i<VisualTreeHelper.GetChildrenCount(x);i++)foreach(var c in Children(VisualTreeHelper.GetChild(x,i)))yield return c;}
  static void Pump(int ms=100){var f=new DispatcherFrame();var t=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(ms)};t.Tick+=(s,e)=>{t.Stop();f.Continue=false;};t.Start();Dispatcher.PushFrame(f);}
+ static void Settle(MusicBars bars,double goal){var timeout=System.Diagnostics.Stopwatch.StartNew();while(bars.TrackReveal!=goal&&timeout.ElapsedMilliseconds<2500)Pump(20);}
  static void Shot(FrameworkElement v,string path){v.UpdateLayout();var b=new RenderTargetBitmap((int)v.ActualWidth,(int)v.ActualHeight,96,96,PixelFormats.Pbgra32);b.Render(v);var p=new PngBitmapEncoder();p.Frames.Add(BitmapFrame.Create(b));using var f=File.Create(path);p.Save(f);}
  internal static void Run(Store store){
   var results=new List<string>();void Check(bool ok,string name){if(!ok)throw new Exception(name);results.Add("PASS "+name);}
@@ -39,12 +40,14 @@ internal static class BarWaveProbes{
   Check(new TrackInfo("Song","Artist",null,true).DisplayTitle=="Song","missing album adds no separator");
   Shot(settings,Path.Combine(store.Root,"bar-settings-en.png"));
   var bars=new MusicBars{Width=800,Height=92};var host=new Window{Content=bars,Width=820,Height=132};host.Show();Pump();
+  Check(bars.TrackInfoHidden&&bars.TrackReveal==0&&!bars.Track.Available,"new bar visual starts fully expanded without placeholder artwork");
+  bars.SetTrack(info with {Playing=false});Pump();Check(bars.TrackInfoHidden&&bars.TrackReveal==0,"a paused session does not open a cover before its first playback");
   bars.SetTrack(info);Check(bars.TitleText=="Song"&&bars.Track.DisplayArtist=="Artist","bar title excludes album while artist stays separate");bars.SetTrack(TrackInfo.Empty);
   Check(Enumerable.Range(0,36).All(i=>bars.BarHeight(i)==3),"silence rests as short blocks");
   var spectrum=new float[48];spectrum[4]=spectrum[5]=.02f;bars.Feed(spectrum);Pump(300);double quiet=bars.BarHeight(3);
   Check(quiet>3&&bars.BarHeight(21)==3,"low-frequency band moves independently without mirroring");
   spectrum[4]=spectrum[5]=.5f;bars.Feed(spectrum);Pump(300);
-  Check(Math.Abs(bars.BarHeight(3)-bars.CoverSize/2)<.01&&bars.BarHeight(3)>quiet,"volume increases height with ceiling at half cover height");
+  Check(Math.Abs(bars.BarHeight(3)-bars.CoverSize*.75)<.01&&bars.BarHeight(3)>quiet,"expanded default uses the full-width layout and 1.5x bar height ceiling");
   byte[] ColorPixel(){bars.UpdateLayout();var bitmap=new RenderTargetBitmap((int)bars.ActualWidth,(int)bars.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(bars);int x=(int)(bars.HorizontalPadding+bars.CoverSize*1.5+14*bars.Scale+(bars.ActualWidth-2*bars.HorizontalPadding-bars.CoverSize*1.5-14*bars.Scale-2)*3.5/36),y=(int)(bars.Baseline-2);var pixel=new byte[4];bitmap.CopyPixels(new Int32Rect(x,y,1,1),pixel,4,0);return pixel;}
   var config=store.Config;config.BarColorMode="solid";config.BarColor="#FF0000";bars.Refresh();Pump();var red=ColorPixel();config.BarColor="#0000FF";bars.Refresh();Pump();var blue=ColorPixel();
   Check(red[2]>red[0]&&blue[0]>blue[2],"bar colors follow independent single-color palette");
@@ -52,6 +55,10 @@ internal static class BarWaveProbes{
   Check(bars.TrackTextColor==Colors.White,"bar title and artist default to white");
   var drawing=new DrawingGroup();using(var dc=drawing.Open()){dc.DrawRectangle(new LinearGradientBrush(Color.FromRgb(79,102,165),Color.FromRgb(183,126,116),45),null,new Rect(0,0,200,200));dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(100,246,213,146)),null,new Point(125,80),48,48);dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(100,20,25,45)),null,new Rect(0,135,200,65));}drawing.Freeze();var art=new DrawingImage(drawing);art.Freeze();
   bars.SetTrack(new TrackInfo("Evening Light","Eureka",art,true,"Preview album"));double angle=bars.Angle;Pump(250);Check(bars.Angle>angle,"record rotates slowly with track artwork");
+  Settle(bars,1);Check(!bars.TrackInfoHidden&&bars.TrackReveal==1,"playing a song elastically opens its cover and labels");
+  bars.SetTrack(bars.Track with {Playing=false});Pump(200);Check(!bars.TrackInfoHidden&&bars.TrackReveal==1&&bars.Track.Title=="Evening Light","pausing keeps artwork and song details visible");
+  bars.Feed(Enumerable.Repeat(.1f,48).ToArray());Pump(150);Check(!bars.TrackInfoHidden&&bars.TrackReveal==1,"other audio does not retract a paused player's artwork");
+  bars.SetTrack(bars.Track with {Playing=true});
   config.BarColor="#E07070";bars.Refresh();Pump(100);bars.UpdateLayout();
   var header=new RenderTargetBitmap((int)bars.ActualWidth,(int)bars.ActualHeight,96,96,PixelFormats.Pbgra32);header.Render(bars);
   var headerPixels=new byte[header.PixelWidth*header.PixelHeight*4];header.CopyPixels(headerPixels,header.PixelWidth*4,0);int coloredText=0;
@@ -62,8 +69,11 @@ internal static class BarWaveProbes{
   config.BarColorMode="custom";config.BarGradient=new(){"#FF0000","#0000FF"};bars.Refresh();Pump(150);var textBefore=bars.TrackTextColor;Pump(600);Check(bars.TrackTextColor!=textBefore,"track text follows the moving bar gradient");config.BarColorMode="solid";config.BarColor="#FFFFFF";bars.Refresh();
   for(int i=0;i<48;i++)spectrum[i]=(float)(.03+.05*(1+Math.Sin(i*.67)));bars.Feed(spectrum);Pump(300);Shot(bars,Path.Combine(store.Root,"bar-wave-demo.png"));
   bars.Feed(new float[48]);Pump(650);Check(Enumerable.Range(0,36).All(i=>bars.BarHeight(i)==3),"silence returns every bar to baseline blocks");Shot(bars,Path.Combine(store.Root,"bar-wave-silent.png"));
-  bars.SetTrack(TrackInfo.Empty);Pump(150);Check(!bars.Animating,"no track and no audio stop frame rendering");Shot(bars,Path.Combine(store.Root,"bar-wave-placeholder.png"));
-  bars.SetTrack(new TrackInfo(new string('W',150),new string('M',200),null,false));Pump();Shot(bars,Path.Combine(store.Root,"bar-wave-long-title.png"));Check(bars.Track.Artwork==null,"missing cover uses local placeholder");
+  bars.SetTrack(TrackInfo.Empty);Pump(150);Check(bars.TrackInfoHidden&&bars.TrackReveal<1,"closing a player starts the elastic cover retraction");
+  Settle(bars,0);Check(bars.TrackReveal==0&&!bars.Animating,"closed player returns to full-width bars and stops idle frames");Shot(bars,Path.Combine(store.Root,"bar-wave-expanded.png"));
+  bars.SetTrack(new TrackInfo(new string('W',150),new string('M',200),null,true));Pump(1000);Shot(bars,Path.Combine(store.Root,"bar-wave-long-title.png"));Check(bars.Track.Artwork==null,"missing cover in a playing song uses a local placeholder");
+  bars.SetStaticTrack(TrackInfo.Empty,true);bars.SetTrack(info with {Playing=false},true);Settle(bars,1);Check(!bars.TrackInfoHidden&&bars.TrackReveal==1,"a confirmed paused session restores previously visible artwork after suspension");
+  bars.Stop();Check(bars.TrackInfoHidden&&bars.TrackReveal==0,"stopping or changing visualizer resets the default expanded layout");
   bars.Stop();host.Close();
   var real=Task.Run(MediaInfoReader.Read).GetAwaiter().GetResult();Check(real.result>=0,"Windows media session API is accessible");File.WriteAllText(Path.Combine(store.Root,"metadata-display.txt"),"Raw title: "+real.track.Title+"\nRaw artist: "+real.track.Artist+"\nRaw album: "+real.track.Album+"\nDisplay title: "+real.track.DisplayTitle+"\nDisplay artist: "+real.track.DisplayArtist);results.Add("INFO current session="+(real.result==1?"none":real.track.Available?"metadata available":"no track details"));
   app.Dock.SetHidden(true);Pump();Check(!music.IsVisible&&!music.Bars.Animating,"hiding Dock stops bars and record");

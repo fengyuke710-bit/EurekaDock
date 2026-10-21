@@ -24,7 +24,8 @@ internal static class AudioLayoutProbes {
   var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(app.Dock);var screen=System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
   double expectedMusicLeft=screen.X/dpi.DpiScaleX+(screen.Width/dpi.DpiScaleX-music.Width)/2;
   Check(Math.Abs(music.Left-expectedMusicLeft)<2,"visualizer remains screen-centered after owner relocation");
-  Check(app.Dock.Accessories.Visibility==Visibility.Visible&&app.Dock.Left<music.Left&&Math.Abs((app.Dock.Left+app.Dock.Accessories.ActualWidth)-music.Left)<15,"controls relocate to visualizer left edge");
+  double visualLeft=music.Left+music.Bars.HorizontalPadding;
+  Check(app.Dock.Accessories.Visibility==Visibility.Visible&&app.Dock.Left<visualLeft&&Math.Abs((app.Dock.Left+app.Dock.Accessories.ActualWidth)-visualLeft)<15,"controls relocate to the visible visualizer left edge, accounting for animation padding");
   c.ShowAccessories=false;store.Save();Pump(200);
   Check(music.IsVisible&&app.Dock.Accessories.Visibility==Visibility.Hidden&&app.Dock.Surface.Visibility==Visibility.Hidden,"both Dock and controls can hide while visualizer remains");
   c.ShowAccessories=true;store.Save();Pump(200);
