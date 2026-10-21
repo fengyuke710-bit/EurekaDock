@@ -17,7 +17,7 @@ internal static class IconEffects {
   else{elapsed-=.70;duration=.20;amplitude=.12;}
   return amplitude*Math.Pow(Math.Max(0,Math.Sin(Math.PI*elapsed/duration)),1.4);
  }
- internal static Rect ReflectionBounds(Rect icon,double lift=0)=>new(icon.X-icon.Width*.11,icon.Bottom+2+lift*.45,icon.Width*1.22,icon.Height*.46);
+ internal static Rect ReflectionBounds(Rect icon,double lift=0)=>new(icon.X-icon.Width*.11,icon.Bottom+Math.Clamp(icon.Height*.055,3.5,6)+lift*.45,icon.Width*1.22,icon.Height*.46);
 }
 
 // Perspective and progressive blur are baked once into premultiplied pixels.
@@ -32,7 +32,7 @@ internal sealed class IconReflection {
   int w=input.PixelWidth,h=input.PixelHeight;var original=new byte[w*h*4];input.CopyPixels(original,w*4,0);
   for(int i=0;i<original.Length;i+=4)for(int c=0;c<3;c++)original[i+c]=Math.Min(original[i+c],original[i+3]);
   var levels=new byte[4][];levels[0]=original;
-  for(int i=1;i<4;i++)levels[i]=FogIcon.Blur(original,w,h,w*(.007+.014*i));
+  for(int i=1;i<4;i++)levels[i]=FogIcon.Blur(original,w,h,w*(.005+.011*i));
   int width=(int)Math.Ceiling(w*1.22),height=Math.Max(2,(int)Math.Ceiling(h*.46));var pixels=new byte[width*height*4];
   double Sample(byte[] data,double x,double y,int channel){
    int x0=(int)Math.Floor(x),y0=(int)Math.Floor(y);double tx=x-x0,ty=y-y0;

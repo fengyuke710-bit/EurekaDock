@@ -1,5 +1,12 @@
 # EurekaDock checkpoint — 2026-10-21
 
+## Latest refinement
+
+- Increased the icon/reflection gap from 2 DIP to a size-aware 3.5–6 DIP, leaving a slightly clearer separation at normal and large icon sizes.
+- Reduced the cached Gaussian blur radii by approximately 22–24%, retaining progressive downward blur, perspective and the existing opacity fade.
+- Release build has zero warnings/errors. All 46 relevant checks passed (23 icon effects, 23 Quick Panel), including the maximum-size/hover viewport bounds, color alpha, physical baseline and idle rendering. Updated Dock and Quick Panel captures were visually inspected.
+- Existing personal effect selections and app configuration are preserved. The running runtime, portable share ZIP and public Git repository are synchronized; version backups remain in Git.
+
 ## Completed
 
 - Added Settings → App Icons between Dock and Apps. Click feedback and resting appearance are independent, immediately saved selectors. Both use Default for new and existing configurations, preserving the current look and interaction.
@@ -12,7 +19,7 @@
 
 ## Validation
 
-Release build: zero warnings/errors. All 214 related checks passed:
+The original feature checkpoint passed all 214 related checks; the latest parameter-only refinement is validated separately above:
 
 - 23 icon-effect checks: legacy/default configuration, fallback values, persistence, actual GUI selectors, cached reflection, color alpha, perspective, progressive blur, physical baseline, bounded bounce, idle stop, suspension and actual Quick Panel target launch.
 - 22 finite-carousel edge checks; 23 Quick Panel checks; 37 bilingual/settings checks across nine pages.
