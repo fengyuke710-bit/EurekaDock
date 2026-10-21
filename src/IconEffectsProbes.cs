@@ -15,6 +15,46 @@ internal static class IconEffectsProbes {
  static void Pump(int ms){var frame=new DispatcherFrame();var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(ms)};timer.Tick+=(s,e)=>{timer.Stop();frame.Continue=false;};timer.Start();Dispatcher.PushFrame(frame);}
  static IEnumerable<DependencyObject> Children(DependencyObject root){yield return root;for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++)foreach(var child in Children(VisualTreeHelper.GetChild(root,i)))yield return child;}
  static void Shot(FrameworkElement view,string path){view.UpdateLayout();var bitmap=new RenderTargetBitmap((int)Math.Ceiling(view.ActualWidth),(int)Math.Ceiling(view.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(view);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(path);png.Save(file);}
+ internal static void CheckReflectionEdges(Store store,List<string> checks){
+  void Check(bool condition,string message){if(!condition)throw new Exception(message);checks.Add("PASS "+message);}
+  var pixels=new byte[64*64*4];for(int i=0;i<pixels.Length;i+=4){pixels[i]=32;pixels[i+1]=180;pixels[i+2]=70;pixels[i+3]=255;}
+  var source=BitmapSource.Create(64,64,96,96,PixelFormats.Pbgra32,null,pixels,256);source.Freeze();
+  string iconPath=Path.Combine(store.Root,"uniform-edge-icon.png");var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(source));using(var file=File.Create(iconPath))encoder.Save(file);
+  var c=store.Config;c.MusicEnabled=false;c.DockEnabled=true;c.IconClickFeedback="default";c.IconDisplayEffect="reflection";c.IconSize=64;c.Gap=32;c.HoverScale=1;c.FadeWidth=128;c.Blur=0;c.InfiniteCarousel=true;
+  c.Items=Enumerable.Range(0,20).Select(i=>new DockItem{Name="Edge sample "+i,Target=Environment.ProcessPath!,Icon=iconPath}).ToList();store.Save();
+  var app=(App)Application.Current;app.Dock=new DockWindow();var dock=app.Dock;dock.Show();Pump(120);var surface=dock.Surface;
+  var samples=new List<object>();
+  (int body,int reflection) Sample(double position,double x,string name){
+   surface.Motion.Position=surface.Motion.Target=position;surface.Motion.Velocity=0;surface.InvalidateVisual();Pump(40);surface.UpdateLayout();
+   var recorded=(DrawingGroup)typeof(DockSurface).GetField("scene",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+   var visual=new DrawingVisual();using(var dc=visual.RenderOpen())dc.DrawDrawing(recorded);
+   var bitmap=new RenderTargetBitmap((int)Math.Ceiling(surface.ActualWidth),(int)Math.Ceiling(surface.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(visual);
+   var data=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(data,bitmap.PixelWidth*4,0);
+   double bottom=surface.ActualHeight-12-dock.IconReflectionSpace;
+   int column=Math.Clamp((int)Math.Round(x),0,bitmap.PixelWidth-1),bodyY=(int)(bottom-32),reflectionY=(int)(IconEffects.ReflectionBounds(new Rect(x-32,bottom-64,64,64)).Top+3);
+   int body=data[(bodyY*bitmap.PixelWidth+column)*4+3],reflected=data[(reflectionY*bitmap.PixelWidth+column)*4+3];
+   var layer=(DrawingGroup)typeof(DockSurface).GetField("reflections",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+   var hits=(List<(Rect rect,DockItem item)>)typeof(DockSurface).GetField("hits",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+   samples.Add(new{name,x,body,reflection=reflected,position=surface.Motion.Position,visualPosition=surface.Motion.VisualPosition,firstCenter=hits.FirstOrDefault().rect.X+32,topLevelMask=layer.OpacityMask!=null,maskLeft=layer.Bounds.Left,maskRight=layer.Bounds.Right});File.WriteAllText(Path.Combine(store.Root,"reflection-edge-pixels.json"),JsonSerializer.Serialize(samples,new JsonSerializerOptions{WriteIndented=true}));
+   var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using(var file=File.Create(Path.Combine(store.Root,name+".png")))png.Save(file);
+   return(body,reflected);
+  }
+  double width=surface.ActualWidth,pitch=c.IconSize+c.Gap;
+  var center=Sample(0,width/2,"reflection-center");
+  Check(center.body>=250&&center.reflection>20,"center reference renders a solid icon and a visible reflection at sampled coordinates");
+  var left=Sample((32-width/2)/pitch,32,"reflection-left-edge");
+  Check(left.body<center.body*.3,"infinite-carousel icon body fades at the left edge");
+  Check(Math.Abs((left.reflection-1.0)/(center.reflection-1)-(left.body-1.0)/(center.body-1))<.06,"left-edge reflection fades at the same rate as its icon body");
+  var right=Sample((width-32-width/2)/pitch,width-32,"reflection-right-edge");
+  Check(Math.Abs((right.reflection-1.0)/(center.reflection-1)-(right.body-1.0)/(center.body-1))<.06,"right-edge reflection fades at the same rate as its icon body");
+  var subpixel=Sample((32.2-width/2)/pitch,32,"reflection-subpixel");Check(Math.Abs(subpixel.reflection-left.reflection)<=2,"reflection edge fading is continuous under subpixel movement");
+  c.InfiniteCarousel=false;store.Save();Pump(80);
+  var start=Sample(surface.Motion.Maximum,34,"reflection-finite-start");Check(start.body>=250&&start.reflection>=center.reflection-2,"finite start endpoint preserves its body and reflection without fading");
+  var end=Sample(surface.Motion.Minimum,width-34,"reflection-finite-end");Check(end.body>=250&&end.reflection>=center.reflection-2,"finite end endpoint preserves its body and reflection without fading");
+  var pulling=Sample(surface.Motion.Maximum-.25,10,"reflection-finite-transition");
+  Check(Math.Abs((pulling.reflection-1.0)/(center.reflection-1)-(pulling.body-1.0)/(center.body-1))<.08,"reflection follows the finite mode's gradually restored edge fade");
+  dock.Close();
+ }
  internal static void Run(Store store){
   var checks=new List<string>();void Check(bool condition,string message){if(!condition)throw new Exception(message);checks.Add("PASS "+message);}
   store.Load();var c=store.Config;
@@ -67,6 +107,6 @@ internal static class IconEffectsProbes {
   c.IconSize=64;c.Gap=28;c.HoverScale=1.25;store.Save();
   Selector("IconClickFeedbackSelector").SelectedIndex=0;Selector("IconDisplayEffectSelector").SelectedIndex=0;Pump(200);surface.PlayLaunchFeedback(targetItem);Pump(1100);
   Check(c.IconClickFeedback=="default"&&c.IconDisplayEffect=="default"&&!surface.BackgroundAnimating&&Math.Abs(dock.MusicAnchorTop-musicAnchor)<.01,"returning both controls to Default restores existing appearance and idle behavior");
-  settings.Close();dock.Close();File.WriteAllText(Path.Combine(store.Root,"icon-effects-results.json"),JsonSerializer.Serialize(checks,new JsonSerializerOptions{WriteIndented=true}));
+  settings.Close();dock.Close();CheckReflectionEdges(store,checks);File.WriteAllText(Path.Combine(store.Root,"icon-effects-results.json"),JsonSerializer.Serialize(checks,new JsonSerializerOptions{WriteIndented=true}));
  }
 }

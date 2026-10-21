@@ -144,8 +144,8 @@ internal sealed class DockSurface : FrameworkElement {
  readonly Dictionary<string,FogIcon?> iconCache=new();
  readonly DrawingGroup scene=new();
  readonly DrawingGroup reflections=new();
+ readonly Dictionary<int,FogFrame> reflectionFrames=new();
  readonly Dictionary<Guid,double> bounces=new();
- double maskWidth=-1,maskHeight=-1,maskLeft=-1,maskRight=-1;
  readonly List<(Rect rect,DockItem item)> hits=new();
  readonly Stopwatch time=Stopwatch.StartNew();
  readonly DispatcherTimer hold=new();
@@ -187,7 +187,7 @@ internal sealed class DockSurface : FrameworkElement {
    icons[item.Id]=icon;
   }
   foreach(var key in iconCache.Keys.Where(k=>!active.Contains(k)).ToArray())iconCache.Remove(key);
-  fogFrames.Clear();bounces.Clear();
+  fogFrames.Clear();reflectionFrames.Clear();reflections.Children.Clear();bounces.Clear();
   if(C.IconDisplayEffect=="reflection")foreach(var icon in icons.Values)if(icon!=null)_=icon.Reflection;
   InvalidateVisual();Wake();
  }
@@ -199,7 +199,7 @@ internal sealed class DockSurface : FrameworkElement {
   if(value){CancelDrag();hover=null;hoverResponses.Clear();bounces.Clear();CompositionTarget.Rendering-=Frame;rendering=false;hold.Stop();}
   else {if(resourcesReleased)Reload();RefreshHover();}
  }
- internal void ReleaseBackgroundResources(){scene.Children.Clear();reflections.Children.Clear();bounces.Clear();icons.Clear();iconCache.Clear();fogFrames.Clear();hits.Clear();resourcesReleased=true;InvalidateVisual();}
+ internal void ReleaseBackgroundResources(){scene.Children.Clear();reflections.Children.Clear();reflectionFrames.Clear();bounces.Clear();icons.Clear();iconCache.Clear();fogFrames.Clear();hits.Clear();resourcesReleased=true;InvalidateVisual();}
  internal void SetRevealPaused(bool value){
   if(revealPaused==value)return;
   revealPaused=value;
@@ -267,15 +267,11 @@ internal sealed class DockSurface : FrameworkElement {
   double leftFade=C.InfiniteCarousel?C.FadeWidth:C.FadeWidth*FogIcon.Fade(Motion.Maximum-Motion.Position,.75),rightFade=C.InfiniteCarousel?C.FadeWidth:C.FadeWidth*FogIcon.Fade(Motion.Position-Motion.Minimum,.75);
   using var reflectionContext=mirror?reflections.Open():null;
   if(mirror){
-   reflectionContext!.DrawRectangle(Brushes.Transparent,null,new Rect(RenderSize));
-   if(maskWidth!=ActualWidth||maskHeight!=ActualHeight||maskLeft!=leftFade||maskRight!=rightFade){
-    var mask=new LinearGradientBrush{StartPoint=new Point(0,0),EndPoint=new Point(1,0)};
-    for(int i=0;i<=96;i++){double x=ActualWidth*i/96;byte alpha=(byte)Math.Round(255*Math.Min(FogIcon.Fade(x,leftFade),FogIcon.Fade(ActualWidth-x,rightFade)));mask.GradientStops.Add(new GradientStop(Color.FromArgb(alpha,255,255,255),i/96.0));}mask.Freeze();reflections.OpacityMask=mask;var clip=new RectangleGeometry(new Rect(RenderSize));clip.Freeze();reflections.ClipGeometry=clip;maskWidth=ActualWidth;maskHeight=ActualHeight;maskLeft=leftFade;maskRight=rightFade;
-   }
    dc.DrawDrawing(reflections);
   }
   int slots=(int)Math.Ceiling(ActualWidth/Pitch/2)+2,baseSlot=(int)Math.Floor(-Motion.VisualPosition);
   foreach(int j in fogFrames.Keys.Where(j=>j<baseSlot-slots||j>baseSlot+slots).ToArray())fogFrames.Remove(j);
+  if(reflectionFrames.Count>0)foreach(int j in reflectionFrames.Keys.Where(j=>j<baseSlot-slots||j>baseSlot+slots).ToArray())reflectionFrames.Remove(j);
   for(int j=baseSlot-slots;j<=baseSlot+slots;j++) {
    if(!C.InfiniteCarousel&&(j<0||j>=items.Count))continue;
    var item=items[C.InfiniteCarousel?Carousel.Wrap(j,items.Count):j];
@@ -290,7 +286,14 @@ internal sealed class DockSurface : FrameworkElement {
    if(icons.TryGetValue(item.Id,out var icon)&&icon!=null) {
     var padded=icon.Padded(rect);
     if(padded.Right<0||padded.Left>ActualWidth)continue;
-    if(mirror)icon.Reflection.Draw(reflectionContext!,restRect,lift);
+    if(mirror){
+     var reflection=icon.Reflection;var reflectionBounds=IconEffects.ReflectionBounds(restRect,lift);
+     if((leftFade<=0||reflectionBounds.Left>=leftFade)&&(rightFade<=0||reflectionBounds.Right<=ActualWidth-rightFade))reflection.Draw(reflectionContext!,restRect,lift);
+     else{
+      if(!reflectionFrames.TryGetValue(j,out var reflectedFrame)||!reflectedFrame.Matches(reflection.EdgeIcon))reflectionFrames[j]=reflectedFrame=new FogFrame(reflection.EdgeIcon);
+      reflection.Draw(reflectionContext!,restRect,lift,reflectedFrame,ActualWidth,leftFade,rightFade);
+     }
+    }
     if((leftFade<=0||padded.Left>=leftFade)&&(rightFade<=0||padded.Right<=ActualWidth-rightFade))dc.DrawImage(icon.Sharp,padded);
     else {
      if(!fogFrames.TryGetValue(j,out var frame)||!frame.Matches(icon))fogFrames[j]=frame=new FogFrame(icon);

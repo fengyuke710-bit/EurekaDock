@@ -1,6 +1,15 @@
 # EurekaDock checkpoint — 2026-10-21
 
-## Latest refinement
+## Latest fix: reflection edge fading
+
+- Dock reflections now reuse the icon body's premultiplied pixel fading pipeline and the same viewport-anchored quintic alpha curve. The independent group opacity mask is removed. Left/right fading and the finite mode's progressively restored fade therefore stay consistent with the body.
+- Reflection edge frames are cached per visible carousel slot, pruned when offscreen, and released on reload/suspension teardown. Icons outside the fade region retain the static cached reflection path; idle rendering still stops.
+- Increased the size-aware icon/reflection gap slightly again, to 5–8 DIP, while retaining perspective, progressive vertical blur, the previous clarity adjustment and the icon/music baseline.
+- Release build has zero warnings/errors. All 132 relevant checks passed: 31 icon-effect checks including actual rendered alpha comparisons, 22 carousel edge checks, 23 Quick Panel checks and 56 fullscreen/lifecycle checks.
+- Pixel tests cover both infinite-carousel sides, subpixel movement, finite start/end without fading, and the finite transition back into edge fading. Center and edge reference pixels are sampled from the recorded drawing in local coordinates, excluding parent visual offsets. The central reference is checked for a solid body and visible reflection before ratios are compared.
+- Running runtime, initialized share ZIP and public Git repository are synchronized with personal configuration preserved. Version checkpoints remain in Git.
+
+## Earlier refinement
 
 - Increased the icon/reflection gap from 2 DIP to a size-aware 3.5–6 DIP, leaving a slightly clearer separation at normal and large icon sizes.
 - Reduced the cached Gaussian blur radii by approximately 22–24%, retaining progressive downward blur, perspective and the existing opacity fade.

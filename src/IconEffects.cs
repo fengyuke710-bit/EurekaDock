@@ -17,7 +17,7 @@ internal static class IconEffects {
   else{elapsed-=.70;duration=.20;amplitude=.12;}
   return amplitude*Math.Pow(Math.Max(0,Math.Sin(Math.PI*elapsed/duration)),1.4);
  }
- internal static Rect ReflectionBounds(Rect icon,double lift=0)=>new(icon.X-icon.Width*.11,icon.Bottom+Math.Clamp(icon.Height*.055,3.5,6)+lift*.45,icon.Width*1.22,icon.Height*.46);
+ internal static Rect ReflectionBounds(Rect icon,double lift=0)=>new(icon.X-icon.Width*.11,icon.Bottom+Math.Clamp(icon.Height*.07,5,8)+lift*.45,icon.Width*1.22,icon.Height*.46);
 }
 
 // Perspective and progressive blur are baked once into premultiplied pixels.
@@ -25,6 +25,8 @@ internal static class IconEffects {
 // fade in all RGBA channels together, so saturated app colors keep their hue.
 internal sealed class IconReflection {
  internal BitmapSource Image {get;}
+ FogIcon? edgeIcon;
+ internal FogIcon EdgeIcon=>edgeIcon??=new FogIcon(Image,0);
  internal IconReflection(BitmapSource source){
   double ratio=Math.Min(1,96.0/Math.Max(source.PixelWidth,source.PixelHeight));
   BitmapSource scaled=ratio<1?new TransformedBitmap(source,new ScaleTransform(ratio,ratio)):source;
@@ -49,9 +51,12 @@ internal sealed class IconReflection {
   }
   Image=BitmapSource.Create(width,height,96,96,PixelFormats.Pbgra32,null,pixels,width*4);Image.Freeze();
  }
- internal void Draw(DrawingContext dc,Rect icon,double lift=0){
+ internal void Draw(DrawingContext dc,Rect icon,double lift=0,FogFrame? edgeFrame=null,double viewport=0,double leftFade=0,double rightFade=0){
   dc.PushOpacity(Math.Clamp(1-lift/Math.Max(1,icon.Height)*.6,.35,1));
-  dc.DrawImage(Image,IconEffects.ReflectionBounds(icon,lift));dc.Pop();
+  var bounds=IconEffects.ReflectionBounds(icon,lift);
+  if(edgeFrame==null)dc.DrawImage(Image,bounds);
+  else edgeFrame.Draw(dc,EdgeIcon.Padded(bounds),viewport,leftFade,rightFade);
+  dc.Pop();
  }
 }
 
